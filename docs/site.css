@@ -22,15 +22,26 @@ html, body {
 body {
   font-family: var(--sans);
   color: var(--ink);
-  background:
-    radial-gradient(1200px 500px at 50% -10%, rgba(255, 250, 240, 0.7), transparent 60%),
-    var(--paper);
+  background-color: #1a1a1a;
+  background-image: url("melted.jpg");
+  background-repeat: no-repeat;
+  background-position: 72% center;
+  background-size: cover;
+  background-attachment: fixed;
 }
 
 .page {
   width: min(720px, calc(100% - 32px));
   margin: 0 auto;
   padding: 56px 0 72px;
+}
+
+.mast {
+  padding: 28px 22px 22px;
+  background: rgba(255, 250, 243, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
 }
 
 .mast img {
@@ -80,7 +91,7 @@ h2 {
 .card {
   margin-top: 28px;
   padding: 22px 22px 8px;
-  background: var(--card);
+  background: rgba(255, 250, 243, 0.94);
   border: 1px solid var(--line);
   border-radius: 18px;
   box-shadow: var(--shadow);
@@ -136,6 +147,11 @@ h2 {
 }
 
 @media (max-width: 640px) {
+  body {
+    background-attachment: scroll;
+    background-position: center;
+  }
+
   .page {
     width: min(720px, calc(100% - 24px));
     padding-top: 32px;

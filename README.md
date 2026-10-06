@@ -1,4 +1,4 @@
-# To English
+# Melted Talker
 
 An Android app that detects the language you paste and turns it into English.
 
