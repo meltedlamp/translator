@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#e8dcc6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="To English">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>To English</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="icon" href="icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;1,9..144,560&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="desk">
+    <header class="mast">
+      <p class="kicker">Language desk</p>
+      <h1>To English</h1>
+      <p class="lede">Paste Russian, Spanish, French, Bulgarian, Japanese, Korean, Mandarin, Turkish, Arabic, or any other language. It detects what you wrote and turns it into English.</p>
+    </header>
+
+    <div class="stage">
+      <section class="panel" aria-label="Original text">
+        <div class="panel-head">
+          <span>Original</span>
+          <span id="count">0</span>
+        </div>
+        <textarea id="source" rows="10" placeholder="Paste or type anything…" spellcheck="false" dir="auto" autofocus></textarea>
+        <div class="panel-foot">
+          <button type="button" id="clear" class="ghost">Clear</button>
+          <button type="button" id="translate" class="solid">Translate</button>
+        </div>
+      </section>
+
+      <section class="panel panel-out" aria-label="English translation">
+        <div class="panel-head">
+          <span id="detected" class="stamp">Waiting</span>
+          <button type="button" id="copy" class="ghost">Copy</button>
+        </div>
+        <div id="output" class="output" data-empty="true" aria-live="polite">English lands here.</div>
+        <p id="status" class="status" role="status"></p>
+      </section>
+    </div>
+
+    <section id="phone" class="phone desk-only" aria-label="Use this on your phone">
+      <div>
+        <p class="kicker">On your phone</p>
+        <h2>Open it in your pocket</h2>
+        <p>Use the same translator on your phone. The laptop stays on, and both join the same Wi-Fi. Scan the code or type the address.</p>
+        <a id="phone-url" class="phone-url" href="#phone">Finding the address…</a>
+        <div class="phone-actions">
+          <button type="button" id="copy-phone" class="ghost">Copy address</button>
+        </div>
+        <ol>
+          <li>iPhone: open it in Safari, tap Share, then Add to Home Screen.</li>
+          <li>Android: open it in Chrome, tap the menu, then Add to Home screen.</li>
+        </ol>
+      </div>
+      <img id="phone-qr" alt="" width="180" height="180">
+    </section>
+
+    <div class="samples" aria-label="Examples">
+      <span class="samples-label">Try</span>
+      <button type="button" data-sample="¿Dónde está la estación de tren más cercana?">Spanish</button>
+      <button type="button" data-sample="Je voudrais un café et une part de gâteau, s'il vous plaît.">French</button>
+      <button type="button" data-sample="Сегодня вечером мы идём в кино. Не опаздывай.">Russian</button>
+      <button type="button" data-sample="Утре следобед ще се видим пред гарата. Не закъснявай.">Bulgarian</button>
+      <button type="button" data-sample="明日の午後、駅前で会いましょう。">Japanese</button>
+      <button type="button" data-sample="이 문장을 영어로 바꿔 주세요.">Korean</button>
+      <button type="button" data-sample="请把这份文件在周五之前发给我。">Mandarin</button>
+      <button type="button" data-sample="Yarın akşam istasyonun önünde buluşalım.">Turkish</button>
+      <button type="button" data-sample="من فضلك أرسل هذا الملف قبل يوم الجمعة.">Arabic</button>
+    </div>
+
+    <p class="fine desk-only">Text is sent to Google Translate so the language can be detected and the English written. Nothing is saved on this computer. The tray icon does this for text you copy in any app. Select text and press Ctrl+Alt+E to translate it in place.</p>
+    <p class="fine phone-only">Text is sent to Google Translate so the language can be detected and the English written. Nothing is saved. This phone uses your laptop, so the laptop stays on and both stay on the same Wi-Fi.</p>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
