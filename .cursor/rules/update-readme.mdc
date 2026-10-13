@@ -1,0 +1,10 @@
+---
+description: Add each translator change to the top of the README Changes list
+alwaysApply: true
+---
+
+# Keep the change list current
+
+When you change this project, add one new bullet at the top of the newest date in `README.md` under `## Changes` before you finish. If that date is not today, add a new date heading above the older ones.
+
+Write it like the existing bullets: one or two plain sentences about what a person can do now. Leave older bullets as they are. Skip this when the only edit is `README.md` itself.
