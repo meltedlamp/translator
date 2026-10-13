@@ -1,9 +1,13 @@
-"""Keep To English running, and translate text from any app.
+"""Keep To English running in the tray.
 
 Copy text anywhere, and a small popup shows the English when the
 language is not already English. Select text and press Ctrl+Alt+E
-to translate that selection on purpose. The tray icon can pause this
-or turn off launching with Windows.
+to translate that selection on purpose.
+
+Hold the right Ctrl key, speak, and release. The words are cleaned up
+and typed where the cursor already is. Press Ctrl+Alt+Space to keep
+talking without holding the key. The tray icon can pause translation,
+turn voice typing off, or stop launching with Windows.
 """
 
 import ctypes
@@ -21,7 +25,13 @@ from ctypes import wintypes
 
 import server
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+def install_dir():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+ROOT = install_dir()
 SETTINGS_PATH = os.path.join(ROOT, "settings.json")
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_NAME = "ToEnglish"
@@ -39,12 +49,21 @@ MOD_SHIFT = 0x0004
 MOD_NOREPEAT = 0x4000
 VK_CONTROL = 0x11
 VK_C = 0x43
+VK_V = 0x56
+VK_SPACE = 0x20
+VK_RCONTROL = 0xA3
 KEYEVENTF_KEYUP = 0x0002
+WH_KEYBOARD_LL = 13
+WM_KEYUP = 0x0101
+WM_SYSKEYUP = 0x0105
+LLKHF_UP = 0x80
+LLKHF_INJECTED = 0x10
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE = 0x08000000
 WS_EX_TOOLWINDOW = 0x00000080
 ERROR_ALREADY_EXISTS = 183
 HOTKEY_ID = 1
+HOTKEY_VOICE_ID = 2
 
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
@@ -114,6 +133,23 @@ user32.MonitorFromPoint.restype = wintypes.HMONITOR
 user32.keybd_event.argtypes = [wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_size_t]
 user32.GetParent.argtypes = [wintypes.HWND]
 user32.GetParent.restype = wintypes.HWND
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.IsWindow.argtypes = [wintypes.HWND]
+user32.IsWindow.restype = wintypes.BOOL
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.SetForegroundWindow.restype = wintypes.BOOL
+user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+user32.AttachThreadInput.restype = wintypes.BOOL
+user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+user32.GetClipboardSequenceNumber.restype = wintypes.DWORD
+user32.SetWindowsHookExW.argtypes = [ctypes.c_int, ctypes.c_void_p, wintypes.HINSTANCE, wintypes.DWORD]
+user32.SetWindowsHookExW.restype = ctypes.c_void_p
+user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
+user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+user32.CallNextHookEx.argtypes = [ctypes.c_void_p, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+user32.CallNextHookEx.restype = ctypes.c_ssize_t
+kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 
 if ctypes.sizeof(ctypes.c_void_p) == 8:
     get_window_long = user32.GetWindowLongPtrW
@@ -155,6 +191,20 @@ WNDPROC = ctypes.WINFUNCTYPE(
     wintypes.WPARAM,
     wintypes.LPARAM,
 )
+HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+
+
+class KBDLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ("vkCode", wintypes.DWORD),
+        ("scanCode", wintypes.DWORD),
+        ("flags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.c_size_t),
+    ]
+
+
+user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD]
 
 
 class WNDCLASSEXW(ctypes.Structure):
@@ -190,19 +240,34 @@ def pythonw_path():
 
 
 def startup_command():
+    if getattr(sys, "frozen", False):
+        return f'"{os.path.abspath(sys.executable)}"'
     script = os.path.join(ROOT, "always.py")
     return f'"{pythonw_path()}" "{script}"'
 
 
 def ensure_packages():
+    if getattr(sys, "frozen", False):
+        return
+    needed = []
     try:
         import pystray  # noqa: F401
         from PIL import Image  # noqa: F401
     except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pystray", "pillow"])
+        needed.extend(["pystray", "pillow"])
+    try:
+        import sounddevice  # noqa: F401
+        import numpy  # noqa: F401
+        import faster_whisper  # noqa: F401
+    except ImportError:
+        needed.extend(["sounddevice", "numpy", "faster-whisper"])
+    if needed:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", *needed])
 
 
 def relaunch_hidden():
+    if getattr(sys, "frozen", False):
+        return
     if os.path.basename(sys.executable).lower() == "pythonw.exe":
         return
     if "--console" in sys.argv:
@@ -227,6 +292,9 @@ def load_settings():
         "paused": bool(data.get("paused", False)),
         "startup": bool(data.get("startup", True)),
         "welcomed": bool(data.get("welcomed", False)),
+        "voice": bool(data.get("voice", True)),
+        "voice_english": bool(data.get("voice_english", False)),
+        "voice_welcomed": bool(data.get("voice_welcomed", False)),
     }
 
 
@@ -346,6 +414,33 @@ def send_ctrl_c():
     user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
 
 
+def send_ctrl_v():
+    user32.keybd_event(VK_CONTROL, 0, 0, 0)
+    time.sleep(0.02)
+    user32.keybd_event(VK_V, 0, 0, 0)
+    time.sleep(0.02)
+    user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
+    user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+
+
+def focus_window(hwnd):
+    if not hwnd or not user32.IsWindow(hwnd):
+        return
+    foreground = user32.GetForegroundWindow()
+    if foreground == hwnd:
+        return
+    current = kernel32.GetCurrentThreadId()
+    foreground_thread = user32.GetWindowThreadProcessId(foreground, None)
+    target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+    user32.AttachThreadInput(current, foreground_thread, True)
+    if target_thread and target_thread != foreground_thread:
+        user32.AttachThreadInput(current, target_thread, True)
+    user32.SetForegroundWindow(hwnd)
+    user32.AttachThreadInput(current, foreground_thread, False)
+    if target_thread and target_thread != foreground_thread:
+        user32.AttachThreadInput(current, target_thread, False)
+
+
 def work_area_at_cursor():
     point = wintypes.POINT()
     user32.GetCursorPos(ctypes.byref(point))
@@ -373,15 +468,28 @@ class TranslatorApp:
         self.debounce = None
         self.hotkey_label = "Ctrl+Alt+E"
         self.icon = None
+        self.voice_lock = threading.Lock()
+        self.stop_event = threading.Event()
+        self.voice_thread = None
+        self.voice_kind = "ptt"
+        self.voice_hwnd = None
+        self.right_down = False
+        self.ptt = False
+        self.pending_stop = False
+        self.last_tap = 0.0
+        self.hold_timer = None
+        self.hook = None
+        self.hook_proc = None
+        self.voice_hotkey = False
 
     @property
     def paused(self):
         return self.settings["paused"]
 
-    def remember_own_clipboard(self, text):
+    def remember_own_clipboard(self, text, seconds=1.2):
         with self.lock:
             self.own_text = text
-            self.own_until = time.time() + 1.2
+            self.own_until = time.time() + seconds
 
     def copy_english(self, text):
         self.remember_own_clipboard(text)
@@ -465,6 +573,183 @@ class TranslatorApp:
     def on_hotkey(self):
         threading.Thread(target=self._capture_selection, daemon=True).start()
 
+    def _voice_busy(self):
+        return self.voice_thread is not None and self.voice_thread.is_alive()
+
+    def _voice_recording(self):
+        return self._voice_busy() and not self.stop_event.is_set()
+
+    def _on_right_ctrl(self, is_up):
+        if not self.settings.get("voice", True):
+            return False
+        action = None
+        with self.voice_lock:
+            if not is_up:
+                if self.right_down:
+                    return True
+                self.right_down = True
+                if self._voice_recording() and self.voice_kind == "hands":
+                    self.pending_stop = True
+                    return True
+                if self._voice_busy():
+                    return True
+                timer = threading.Timer(0.18, self._hold_fired)
+                timer.daemon = True
+                self.hold_timer = timer
+                timer.start()
+                return True
+            self.right_down = False
+            if self.hold_timer:
+                self.hold_timer.cancel()
+                self.hold_timer = None
+            if self.ptt:
+                self.ptt = False
+                action = "stop"
+            elif self.pending_stop:
+                self.pending_stop = False
+                action = "stop"
+            else:
+                now = time.time()
+                if now - self.last_tap <= 0.4:
+                    self.last_tap = 0.0
+                    action = "hands"
+                else:
+                    self.last_tap = now
+        if action == "stop":
+            self.stop_event.set()
+        elif action == "hands":
+            self.request_start("hands")
+        return True
+
+    def _hold_fired(self):
+        if not self.settings.get("voice", True):
+            return
+        with self.voice_lock:
+            if not self.right_down or self.ptt or self._voice_busy():
+                return
+        self.request_start("ptt")
+
+    def request_start(self, kind):
+        with self.voice_lock:
+            if self._voice_busy():
+                return False
+            if kind == "ptt" and not self.right_down:
+                return False
+            self.stop_event.clear()
+            self.voice_kind = kind
+            self.voice_hwnd = user32.GetForegroundWindow()
+            if kind == "ptt":
+                self.ptt = True
+            hwnd = self.voice_hwnd
+            self.voice_thread = threading.Thread(
+                target=self._voice_session,
+                args=(kind, hwnd),
+                daemon=True,
+                name="voice",
+            )
+            self.voice_thread.start()
+            return True
+
+    def on_voice_toggle(self):
+        if not self.settings.get("voice", True):
+            self.ui.show(
+                "Voice",
+                "Voice typing is off. Right-click the tray icon and turn it on.",
+                "",
+                copy=False,
+            )
+            return
+        with self.voice_lock:
+            recording = self._voice_recording()
+        if recording:
+            with self.voice_lock:
+                self.ptt = False
+                self.pending_stop = False
+            self.stop_event.set()
+            return
+        self.request_start("hands")
+
+    def paste_voice(self, text, hwnd):
+        self.capturing = True
+        try:
+            with self.clip_lock:
+                previous = read_clipboard()
+                if not write_clipboard(text):
+                    return False
+                sequence = user32.GetClipboardSequenceNumber()
+            self.remember_own_clipboard(text, seconds=2.5)
+            focus_window(hwnd)
+            time.sleep(0.06)
+            send_ctrl_v()
+            time.sleep(0.35)
+            if previous is not None:
+                with self.clip_lock:
+                    if user32.GetClipboardSequenceNumber() == sequence:
+                        self.remember_own_clipboard(previous, seconds=2.0)
+                        write_clipboard(previous)
+            return True
+        finally:
+            self.capturing = False
+
+    def _voice_session(self, kind, hwnd):
+        try:
+            import voice
+        except Exception:
+            self.ui.events.put(("pill", None))
+            self.ui.show(
+                "Voice",
+                "Voice typing still needs its setup. Run start.bat and leave that window open until it finishes.",
+                "",
+                copy=False,
+            )
+            return
+        if kind == "ptt":
+            label = "Listening · release to type"
+        elif self.voice_hotkey:
+            label = "Listening · Ctrl+Alt+Space to finish"
+        else:
+            label = "Listening · tap right Ctrl to finish"
+        self.ui.events.put(("pill", label))
+        try:
+            audio = voice.capture(self.stop_event)
+            duration = (audio.size / voice.RATE) if audio is not None else 0
+            if voice.too_quiet(audio):
+                if duration >= 0.6:
+                    self.ui.show("Voice", "Didn't catch that.", "", copy=False)
+                return
+            self.ui.events.put(("pill", "Writing" if voice.model_ready() else "Getting voice ready…"))
+            heard = voice.transcribe(audio, english=bool(self.settings.get("voice_english")))
+            text = voice.polish(heard)
+            if not text:
+                self.ui.show("Voice", "Didn't catch that.", "", copy=False)
+                return
+            if not self.paste_voice(text, hwnd):
+                self.ui.show("Voice", "Couldn't type that into the box. Click it and try again.", "", copy=False)
+        except voice.VoiceError as exc:
+            self.ui.show("Voice", str(exc), "", copy=False)
+        except Exception:
+            self.ui.show(
+                "Voice",
+                "Couldn't turn that speech into text. Check your connection if this is the first time.",
+                "",
+                copy=False,
+            )
+        finally:
+            self.ui.events.put(("pill", None))
+
+    def toggle_voice(self, icon, _item):
+        self.settings["voice"] = not self.settings["voice"]
+        save_settings(self.settings)
+        if not self.settings["voice"]:
+            self.stop_event.set()
+        self._refresh_icon()
+        icon.update_menu()
+
+    def toggle_voice_english(self, icon, _item):
+        self.settings["voice_english"] = not self.settings["voice_english"]
+        save_settings(self.settings)
+        icon.update_menu()
+
     def _capture_selection(self):
         self.capturing = True
         try:
@@ -522,10 +807,11 @@ class TranslatorApp:
     def _refresh_icon(self):
         if not self.icon:
             return
+        voice = "Hold right Ctrl to dictate." if self.settings.get("voice", True) else "Voice typing is off."
         if self.paused:
-            self.icon.title = f"To English is paused. Select text and press {self.hotkey_label}."
+            self.icon.title = f"To English is paused. {voice}"
         else:
-            self.icon.title = f"To English translates text you copy. Select text and press {self.hotkey_label}."
+            self.icon.title = f"To English. {voice} Select text and press {self.hotkey_label} to translate."
 
     def _wndproc(self, hwnd, msg, wparam, lparam):
         try:
@@ -533,11 +819,18 @@ class TranslatorApp:
                 self.on_clipboard()
                 return 0
             if msg == WM_HOTKEY:
-                self.on_hotkey()
+                if wparam == HOTKEY_VOICE_ID:
+                    self.on_voice_toggle()
+                else:
+                    self.on_hotkey()
                 return 0
             if msg == WM_CLOSE:
                 user32.RemoveClipboardFormatListener(hwnd)
                 user32.UnregisterHotKey(hwnd, HOTKEY_ID)
+                user32.UnregisterHotKey(hwnd, HOTKEY_VOICE_ID)
+                if self.hook:
+                    user32.UnhookWindowsHookEx(self.hook)
+                    self.hook = None
                 user32.DestroyWindow(hwnd)
                 return 0
             if msg == WM_DESTROY:
@@ -578,8 +871,29 @@ class TranslatorApp:
             if user32.RegisterHotKey(self.hwnd, HOTKEY_ID, modifiers, key):
                 self.hotkey_label = label
                 break
+        self.voice_hotkey = bool(user32.RegisterHotKey(
+            self.hwnd,
+            HOTKEY_VOICE_ID,
+            MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
+            VK_SPACE,
+        ))
+        self.hook_proc = HOOKPROC(self._keyboard_hook)
+        self.hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self.hook_proc, None, 0)
         self._refresh_icon()
-        print(f"ready {self.hotkey_label}", flush=True)
+        print(f"ready {self.hotkey_label} voice={bool(self.hook)}", flush=True)
+
+    def _keyboard_hook(self, n_code, w_param, l_param):
+        if n_code >= 0:
+            try:
+                info = ctypes.cast(l_param, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+                injected = bool(info.flags & LLKHF_INJECTED)
+                if not injected and info.vkCode == VK_RCONTROL:
+                    is_up = bool(info.flags & LLKHF_UP) or w_param in (WM_KEYUP, WM_SYSKEYUP)
+                    if self._on_right_ctrl(is_up):
+                        return 1
+            except Exception:
+                pass
+        return user32.CallNextHookEx(self.hook, n_code, w_param, l_param)
         message = wintypes.MSG()
         while user32.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
             user32.TranslateMessage(ctypes.byref(message))
@@ -591,6 +905,8 @@ class PopupUI:
         self.events = queue.Queue()
         self.root = None
         self.window = None
+        self.pill = None
+        self.pill_label = None
         self.app = None
 
     def show(self, language, english, note, copy=True):
@@ -617,11 +933,52 @@ class PopupUI:
                 if kind == "quit":
                     self.root.quit()
                     return
+                if kind == "pill":
+                    self._pill(payload)
+                    continue
                 if kind == "popup":
                     self._popup(*payload)
         except queue.Empty:
             pass
         self.root.after(80, self._poll)
+
+    def _pill(self, label):
+        if not label:
+            if self.pill is not None:
+                try:
+                    self.pill.destroy()
+                except tk.TclError:
+                    pass
+                self.pill = None
+                self.pill_label = None
+            return
+        if self.pill is None:
+            win = tk.Toplevel(self.root)
+            self.pill = win
+            win.overrideredirect(True)
+            win.attributes("-topmost", True)
+            win.configure(bg="#1c1612")
+            self.pill_label = tk.Label(
+                win,
+                text=label,
+                bg="#1c1612",
+                fg="#fffaf3",
+                font=("Segoe UI", 10),
+                padx=14,
+                pady=8,
+            )
+            self.pill_label.pack()
+        else:
+            self.pill_label.configure(text=label)
+        self.pill.update_idletasks()
+        width = self.pill.winfo_reqwidth()
+        height = self.pill.winfo_reqheight()
+        _cursor_x, _cursor_y, area = work_area_at_cursor()
+        x = area.left + max(0, (area.right - area.left - width) // 2)
+        y = area.bottom - height - 28
+        self.pill.geometry(f"{width}x{height}+{int(x)}+{int(y)}")
+        self._no_activate(self.pill)
+        self.pill.lift()
 
     def _popup(self, language, english, note, copy):
         if self.window is not None:
@@ -787,7 +1144,23 @@ def build_menu(app):
     from pystray import Menu, MenuItem
 
     return Menu(
-        MenuItem(lambda _item: f"Hotkey: {app.hotkey_label}", None, enabled=False),
+        MenuItem(
+            lambda _item: "Hold right Ctrl to dictate" if app.settings.get("voice", True) else "Voice typing is off",
+            None,
+            enabled=False,
+        ),
+        MenuItem(
+            "Voice typing",
+            app.toggle_voice,
+            checked=lambda _item: app.settings.get("voice", True),
+        ),
+        MenuItem(
+            "Type speech in English",
+            app.toggle_voice_english,
+            checked=lambda _item: app.settings.get("voice_english", False),
+        ),
+        Menu.SEPARATOR,
+        MenuItem(lambda _item: f"Translate hotkey: {app.hotkey_label}", None, enabled=False),
         MenuItem(
             "Translate text I copy",
             app.toggle_paused,
@@ -814,7 +1187,15 @@ def run_icon(app):
     def setup(ready):
         ready.visible = True
         app._refresh_icon()
-        if not app.settings["welcomed"]:
+        if not app.settings.get("voice_welcomed"):
+            ready.notify(
+                "Hold the right Ctrl key and speak. The words are typed where your cursor is.",
+                "Voice typing is on",
+            )
+            app.settings["voice_welcomed"] = True
+            app.settings["welcomed"] = True
+            save_settings(app.settings)
+        elif not app.settings["welcomed"]:
             ready.notify(
                 f"Copy text in any app, or select it and press {app.hotkey_label}.",
                 "To English is on",
@@ -825,6 +1206,15 @@ def run_icon(app):
     icon.run(setup)
 
 
+def preload_voice():
+    try:
+        import voice
+
+        voice.get_model()
+    except Exception:
+        return
+
+
 def main():
     os.chdir(ROOT)
     ensure_packages()
@@ -832,12 +1222,17 @@ def main():
     held_mutex = claim_single_instance()
     set_startup(load_settings()["startup"])
     server.start_background()
+    if getattr(sys, "frozen", False):
+        import webbrowser
+
+        threading.Timer(0.6, lambda: webbrowser.open(f"http://127.0.0.1:{server.PORT}")).start()
 
     ui = PopupUI()
     app = TranslatorApp(ui)
     ui.app = app
     threading.Thread(target=app.listen, daemon=True, name="clipboard").start()
     threading.Thread(target=run_icon, args=(app,), daemon=True, name="tray").start()
+    threading.Thread(target=preload_voice, daemon=True, name="voice-model").start()
     ui._build().mainloop()
 
 

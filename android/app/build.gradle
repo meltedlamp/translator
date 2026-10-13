@@ -1,0 +1,44 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.meltedlamp.toenglish"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.meltedlamp.toenglish"
+        minSdk 24
+        targetSdk 34
+        versionCode 2
+        versionName "1.1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDir layout.buildDirectory.dir("generated/assets")
+        }
+    }
+}
+
+tasks.register("copyWeb", Copy) {
+    from rootProject.projectDir.parentFile
+    include "index.html", "app.js", "styles.css", "icon-192.png", "icon-512.png", "apple-touch-icon.png", "manifest.webmanifest"
+    into layout.buildDirectory.dir("generated/assets/www")
+}
+
+tasks.named("preBuild").configure {
+    dependsOn "copyWeb"
+}

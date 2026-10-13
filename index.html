@@ -22,8 +22,15 @@
     <header class="mast">
       <p class="kicker">Language desk</p>
       <h1>To English</h1>
-      <p class="lede">Paste Russian, Spanish, French, Bulgarian, Japanese, Korean, Mandarin, Turkish, Arabic, or any other language. It detects what you wrote and turns it into English.</p>
+      <p class="lede">Speak into the box you're already typing in, or paste another language and turn it into English.</p>
     </header>
+
+    <section class="voice" aria-label="Voice typing">
+      <p class="kicker">Voice typing</p>
+      <h2>Talk, then let go</h2>
+      <p class="desk-only">Hold <kbd>Right Ctrl</kbd>, speak the way you think, and release. The words are typed where your cursor already is. “Um” is left out, and “4, actually 6” keeps 6. Tap <kbd>Right Ctrl</kbd> twice, or press <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd>, when you want both hands free. Right-click the tray icon and choose Type speech in English when you want another language written in English.</p>
+      <p class="phone-only">On the computer, hold the right Ctrl key and speak. The words are typed into whatever you were writing.</p>
+    </section>
 
     <div class="stage">
       <section class="panel" aria-label="Original text">
@@ -33,6 +40,7 @@
         </div>
         <textarea id="source" rows="10" placeholder="Paste or type anything…" spellcheck="false" dir="auto" autofocus></textarea>
         <div class="panel-foot">
+          <button type="button" id="speak" class="ghost" aria-pressed="false">Speak</button>
           <button type="button" id="clear" class="ghost">Clear</button>
           <button type="button" id="translate" class="solid">Translate</button>
         </div>
@@ -78,8 +86,9 @@
       <button type="button" data-sample="من فضلك أرسل هذا الملف قبل يوم الجمعة.">Arabic</button>
     </div>
 
-    <p class="fine desk-only">Text is sent to Google Translate so the language can be detected and the English written. Nothing is saved on this computer. The tray icon does this for text you copy in any app. Select text and press Ctrl+Alt+E to translate it in place.</p>
+    <p class="fine desk-only">Hold the right Ctrl key in any app and the words are typed there. Speech is turned into text on this computer. Select text and press Ctrl+Alt+E to translate it in place. Pasted text is sent to Google Translate so the language can be detected and the English written. Nothing is saved.</p>
     <p class="fine phone-only">Text is sent to Google Translate so the language can be detected and the English written. Nothing is saved. This phone uses your laptop, so the laptop stays on and both stay on the same Wi-Fi.</p>
+    <p class="fine installed-only">Text is sent to Google Translate so the language can be detected and the English written. Nothing is saved on this device. You can also share text into To English from another app.</p>
   </main>
   <script src="app.js"></script>
 </body>

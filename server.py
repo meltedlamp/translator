@@ -14,7 +14,15 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = 8765
 HOST = "0.0.0.0"
-ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def bundle_root():
+    if getattr(sys, "frozen", False):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+ROOT = bundle_root()
 GOOGLE = "https://translate.googleapis.com/translate_a/single"
 MAX_CHARS = 12000
 CHUNK = 3500
@@ -294,7 +302,11 @@ class Handler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
-        if self.path.split("?", 1)[0] != "/api/translate":
+        path = self.path.split("?", 1)[0]
+        if path == "/api/dictate":
+            self._dictate()
+            return
+        if path != "/api/translate":
             self._json(404, {"error": "Not found."})
             return
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -331,6 +343,33 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(502, {"error": "No English translation came back."})
             return
         self._json(200, result)
+
+    def _dictate(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            self._json(400, {"error": "Didn't catch that."})
+            return
+        if length > 8_000_000:
+            self._json(413, {"error": "That recording is too long."})
+            return
+        raw = self.rfile.read(length)
+        try:
+            import voice
+        except Exception:
+            self._json(
+                502,
+                {"error": "Voice typing still needs its setup. Run start.bat and leave that window open until it finishes."},
+            )
+            return
+        try:
+            text = voice.dictate_bytes(raw)
+        except voice.VoiceError as exc:
+            self._json(400, {"error": str(exc)})
+            return
+        except Exception:
+            self._json(502, {"error": "Couldn't turn that speech into text."})
+            return
+        self._json(200, {"text": text})
 
     def _json(self, code, payload):
         data = json.dumps(payload).encode("utf-8")
