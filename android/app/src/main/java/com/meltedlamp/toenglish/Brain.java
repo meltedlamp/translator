@@ -210,7 +210,13 @@ final class Brain {
     }
 
     static String noteFor(JSONArray fixes) {
-        JSONArray unique = unique(fixes);
+        JSONArray unique = new JSONArray();
+        JSONArray all = unique(fixes);
+        for (int i = 0; i < all.length(); i++) {
+            JSONObject fix = all.optJSONObject(i);
+            if (fix == null || "i".equalsIgnoreCase(fix.optString("wrong"))) continue;
+            unique.put(fix);
+        }
         if (unique.length() == 0) return "";
         if (unique.length() == 1) {
             JSONObject fix = unique.optJSONObject(0);

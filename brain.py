@@ -564,7 +564,7 @@ def snapshot(fixes):
 
 
 def note_for(fixes):
-    fixes = _unique(fixes or [])
+    fixes = [fix for fix in _unique(fixes or []) if fix["wrong"].lower() != "i"]
     if not fixes:
         return ""
     if len(fixes) == 1:
