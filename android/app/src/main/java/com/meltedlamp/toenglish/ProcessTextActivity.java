@@ -43,8 +43,8 @@ public class ProcessTextActivity extends Activity {
     private TextView status;
     private String selected = "";
     private boolean readOnly = true;
-    private String step = "modes";
-    private String pendingMode = "to-english";
+    private String step = "from";
+    private String pendingSource = "auto";
     private int generation;
     private int padLeft;
     private int padTop;
@@ -76,8 +76,7 @@ public class ProcessTextActivity extends Activity {
             finish();
             return;
         }
-        showModes();
-        placeWindow();
+        showFrom();
     }
 
     @Override
@@ -89,7 +88,7 @@ public class ProcessTextActivity extends Activity {
             finish();
             return;
         }
-        showModes();
+        showFrom();
     }
 
     @Override
@@ -102,8 +101,12 @@ public class ProcessTextActivity extends Activity {
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        if ("languages".equals(step) || "result".equals(step)) {
-            showModes();
+        if ("result".equals(step)) {
+            showInto();
+            return;
+        }
+        if ("into".equals(step)) {
+            showFrom();
             return;
         }
         setResult(RESULT_CANCELED);
@@ -118,28 +121,23 @@ public class ProcessTextActivity extends Activity {
         return !selected.isEmpty();
     }
 
-    private void showModes() {
-        step = "modes";
-        title.setText("Which mode?");
-        preview.setText(previewOf(selected));
-        status.setText("This is the text you selected.");
-        setStageHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
-        stage.removeAllViews();
-        LinearLayout column = column();
-        column.addView(modeButton("To English", () -> beginTranslate("auto", "en")));
-        column.addView(modeButton("English to…", () -> showLanguages("from-english")));
-        column.addView(modeButton("Any language to…", () -> showLanguages("any")));
-        stage.addView(column);
-        placeWindow();
+    private void showFrom() {
+        showLanguageStep("from", "Which language is this?", true, code -> {
+            pendingSource = code;
+            showInto();
+        });
     }
 
-    private void showLanguages(String mode) {
-        step = "languages";
-        pendingMode = mode;
-        title.setText("Into which language?");
-        status.setText("");
-        boolean includeEnglish = "any".equals(mode);
-        List<LangRow> rows = languageRows(includeEnglish);
+    private void showInto() {
+        showLanguageStep("into", "Translate it into…", false, code -> beginTranslate(pendingSource, code));
+    }
+
+    private void showLanguageStep(String nextStep, String heading, boolean includeDetect, java.util.function.Consumer<String> onPick) {
+        step = nextStep;
+        title.setText(heading);
+        preview.setText(previewOf(selected));
+        status.setText("This is the text you selected.");
+        List<LangRow> rows = languageRows(includeDetect);
         ListView list = new ListView(this);
         list.setAdapter(new LanguageAdapter(rows));
         list.setDivider(new ColorDrawable(0xFF3A342C));
@@ -148,8 +146,7 @@ public class ProcessTextActivity extends Activity {
         list.setOnItemClickListener((parent, view, position, id) -> {
             LangRow row = rows.get(position);
             if (row.code == null) return;
-            if ("from-english".equals(pendingMode)) beginTranslate("en", row.code);
-            else beginTranslate("auto", row.code);
+            onPick.accept(row.code);
         });
         setStageHeight(dp(340));
         stage.removeAllViews();
@@ -187,13 +184,13 @@ public class ProcessTextActivity extends Activity {
         try {
             data = new JSONObject(payload);
         } catch (Exception ex) {
-            showModes();
+            showFrom();
             status.setText("Translation failed.");
             return;
         }
         String translation = data.optString("translation", data.optString("english", "")).trim();
         if (translation.isEmpty()) {
-            showModes();
+            showFrom();
             status.setText(data.optString("error", "Translation failed."));
             return;
         }
@@ -254,17 +251,6 @@ public class ProcessTextActivity extends Activity {
         finish();
     }
 
-    private Button modeButton(String label, Runnable action) {
-        Button button = pill(label, false);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.topMargin = dp(8);
-        button.setLayoutParams(params);
-        button.setOnClickListener(view -> action.run());
-        return button;
-    }
-
     private Button actionButton(String label, boolean solid, Runnable action) {
         Button button = pill(label, solid);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -314,11 +300,12 @@ public class ProcessTextActivity extends Activity {
         window.setAttributes(params);
     }
 
-    private List<LangRow> languageRows(boolean includeEnglish) {
+    private List<LangRow> languageRows(boolean includeDetect) {
         List<LangRow> rows = new ArrayList<>();
         Set<String> used = new HashSet<>();
+        if (includeDetect) rows.add(new LangRow("auto", "Detect language"));
         rows.add(new LangRow(null, "Often"));
-        if (includeEnglish && Translator.knownLanguage("en")) {
+        if (Translator.knownLanguage("en")) {
             rows.add(new LangRow("en", Translator.languageName("en")));
             used.add("en");
         }
@@ -329,8 +316,7 @@ public class ProcessTextActivity extends Activity {
         }
         List<LangRow> more = new ArrayList<>();
         for (String code : Translator.languageCodes()) {
-            if (used.contains(code) || "iw".equals(code)) continue;
-            if (!includeEnglish && "en".equals(code)) continue;
+            if (used.contains(code) || "iw".equals(code) || "en".equals(code)) continue;
             more.add(new LangRow(code, Translator.languageName(code)));
         }
         Collections.sort(more, (left, right) -> left.label.compareToIgnoreCase(right.label));

@@ -210,33 +210,13 @@
       <button type="button" data-sample="من فضلك أرسل هذا الملف قبل يوم الجمعة.">Arabic</button>
     </div>
 
-    <p class="fine desk-only">Hold the right Ctrl key in any app and the words are typed there. Speech is turned into text on this computer. Select text and press Ctrl+Alt+E to translate it in place. Pasted text is sent to Google Translate so the language can be detected and the translation written. Nothing is saved.</p>
-    <p class="fine phone-only">Long-press a line, tap Translate, and choose the mode. The translation shows on this page. Text is sent to Google Translate so the language can be detected and the translation written. Nothing is saved. This phone uses your laptop, so the laptop stays on and both stay on the same Wi-Fi.</p>
-    <p class="fine installed-only">Long-press a word in any app, tap Translate, and choose the mode. The translation opens over that app. You can replace the selection when the box can be edited. Text is sent to Google Translate so the language can be detected and the translation written. Nothing is saved on this device.</p>
+    <p class="fine desk-only">Hold the right Ctrl key to dictate into the app you're using. Nothing is saved.</p>
+    <p class="fine phone-only">Choose From and Into above, select a line, and tap Translate. Nothing is saved. This phone uses your laptop, so the laptop stays on and both stay on the same Wi-Fi.</p>
+    <p class="fine installed-only">Choose From and Into above, then select words in another app and tap Translate. Nothing is saved on this device.</p>
   </main>
   <div id="hold-menu" class="hold-menu" hidden>
     <span id="hold-label">Text selected</span>
     <button type="button" id="hold-translate" class="solid">Translate</button>
-  </div>
-  <div id="mode-sheet" class="mode-sheet" hidden>
-    <div class="mode-card" role="dialog" aria-modal="true" aria-labelledby="mode-title">
-      <p class="kicker">Translate</p>
-      <h2 id="mode-title">Which mode?</h2>
-      <p id="mode-preview" class="mode-preview"></p>
-      <div class="mode-picks" role="radiogroup" aria-label="Translation mode">
-        <button type="button" data-pick="to-english">To English</button>
-        <button type="button" data-pick="from-english">English to…</button>
-        <button type="button" data-pick="any">Any language to…</button>
-      </div>
-      <label class="target" id="sheet-target" hidden>
-        <span>Into</span>
-        <select id="sheet-lang" aria-label="Output language"></select>
-      </label>
-      <div class="mode-actions">
-        <button type="button" id="mode-cancel" class="ghost">Cancel</button>
-        <button type="button" id="mode-go" class="solid">Show translation</button>
-      </div>
-    </div>
   </div>
   <script src="app.js"></script>
 </body>

@@ -1410,8 +1410,6 @@ class PopupUI:
         widget.configure(state="normal")
         widget.delete("1.0", "end")
         widget.insert("1.0", value)
-        widget.configure(state="disabled")
-        widget.configure(bg="#1c1a17")
 
     def _fill_card(self, payload):
         source, target = ("auto", "en")
