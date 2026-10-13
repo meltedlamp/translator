@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">To English</string>
+    <string name="process_text_label">Translate</string>
     <string name="talker_channel">Melted Talker</string>
     <string name="talker_on">Melted Talker is on</string>
     <string name="talker_on_detail">Stays ready in the background.</string>

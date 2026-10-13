@@ -18,10 +18,15 @@ final class NativeBridge {
 
     @JavascriptInterface
     public void translate(String id, String text) {
+        translate(id, text, "auto", "en");
+    }
+
+    @JavascriptInterface
+    public void translate(String id, String text, String source, String target) {
         pool.execute(() -> {
             String payload;
             try {
-                payload = Translator.translate(text);
+                payload = Translator.translate(text, source, target);
             } catch (Exception ex) {
                 payload = "{\"error\":\"Could not reach the translator. Check your connection and try again.\"}";
             }

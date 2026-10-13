@@ -168,12 +168,22 @@ def split_text(text, limit=CHUNK):
     return parts
 
 
-def translate_chunk(text):
+def same_language(detected, target):
+    if not detected or not target:
+        return False
+    if detected == target:
+        return True
+    if "-" not in target and detected.split("-")[0] == target:
+        return True
+    return False
+
+
+def translate_chunk(text, source="auto", target="en"):
     payload = urllib.parse.urlencode(
         {
             "client": "gtx",
-            "sl": "auto",
-            "tl": "en",
+            "sl": source or "auto",
+            "tl": target or "en",
             "dt": "t",
             "dj": "1",
             "q": text,
@@ -186,7 +196,7 @@ def translate_chunk(text):
     )
     with urllib.request.urlopen(request, timeout=25) as response:
         data = json.loads(response.read().decode("utf-8"))
-    english = "".join(
+    translation = "".join(
         sentence["trans"]
         for sentence in data.get("sentences") or []
         if "trans" in sentence
@@ -195,30 +205,45 @@ def translate_chunk(text):
     if not isinstance(confidence, (int, float)):
         confidence = None
     return {
-        "english": english,
+        "translation": translation,
         "code": data.get("src") or "",
         "confidence": confidence,
         "weight": len(text),
     }
 
 
-def translate_to_english(text):
-    pieces = [translate_chunk(part) for part in split_text(text)]
+def translate_text(text, source="auto", target="en"):
+    source = source if source in LANGUAGE_NAMES or source == "auto" else "auto"
+    target = target if target in LANGUAGE_NAMES else "en"
+    pieces = [translate_chunk(part, source, target) for part in split_text(text)]
     best = max(pieces, key=lambda piece: piece["weight"])
     code = best["code"]
     confidence = best["confidence"]
+    target_name = language_name(target)
     note = ""
-    if code == "en":
-        note = "This already looks like English."
-    elif confidence is not None and confidence < 0.35:
+    if same_language(code, target):
+        note = f"This already looks like {target_name}."
+    elif source == "en" and code and not same_language(code, "en"):
+        note = f"That was read as {language_name(code)}, not English."
+    elif source == "auto" and confidence is not None and confidence < 0.35:
         note = "Low confidence. A very short line can be hard to place."
-    return {
-        "english": "".join(piece["english"] for piece in pieces).strip(),
+    translation = "".join(piece["translation"] for piece in pieces).strip()
+    result = {
+        "translation": translation,
         "language": language_name(code),
         "code": code,
+        "target": target_name,
+        "targetCode": target,
         "confidence": confidence,
         "note": note,
     }
+    if target == "en":
+        result["english"] = translation
+    return result
+
+
+def translate_to_english(text):
+    return translate_text(text, "auto", "en")
 
 
 def lan_ip():
@@ -239,6 +264,52 @@ def phone_url():
     if not address:
         return None
     return f"http://{address}:{PORT}"
+
+
+def settings_path():
+    if getattr(sys, "frozen", False):
+        folder = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        folder = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(folder, "settings.json")
+
+
+def read_settings_file():
+    try:
+        with open(settings_path(), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def clean_language(value, default, allow_auto=False):
+    if not isinstance(value, str):
+        return default
+    value = value.strip()
+    if allow_auto and value == "auto":
+        return "auto"
+    if value in LANGUAGE_NAMES:
+        return value
+    return default
+
+
+def language_settings():
+    data = read_settings_file()
+    return {
+        "source": clean_language(data.get("source"), "auto", allow_auto=True),
+        "target": clean_language(data.get("target"), "en"),
+        "chosen": "source" in data or "target" in data,
+    }
+
+
+def store_language_settings(source, target):
+    data = read_settings_file()
+    data["source"] = clean_language(source, "auto", allow_auto=True)
+    data["target"] = clean_language(target, "en")
+    with open(settings_path(), "w", encoding="utf-8") as handle:
+        json.dump(data, handle)
+    return language_settings()
 
 
 def phone_qr_png(url):
@@ -283,6 +354,9 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/phone":
             self._json(200, {"url": phone_url()})
             return
+        if path == "/api/settings":
+            self._json(200, language_settings())
+            return
         if path == "/phone-qr.png":
             url = phone_url()
             if not url:
@@ -305,6 +379,9 @@ class Handler(SimpleHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/api/dictate":
             self._dictate()
+            return
+        if path == "/api/settings":
+            self._save_settings()
             return
         if path != "/api/translate":
             self._json(404, {"error": "Not found."})
@@ -331,18 +408,42 @@ class Handler(SimpleHTTPRequestHandler):
                 {"error": f"Keep it under {MAX_CHARS:,} characters."},
             )
             return
+        target = body.get("target") if isinstance(body, dict) else "en"
+        source = body.get("source") if isinstance(body, dict) else "auto"
+        if not isinstance(target, str) or target.strip() not in LANGUAGE_NAMES:
+            target = "en"
+        else:
+            target = target.strip()
+        if not isinstance(source, str) or source.strip() not in ("auto", *LANGUAGE_NAMES):
+            source = "auto"
+        else:
+            source = source.strip()
         try:
-            result = translate_to_english(text)
+            result = translate_text(text, source, target)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
             self._json(
                 502,
                 {"error": "Could not reach the translator. Check your connection and try again."},
             )
             return
-        if not result["english"]:
-            self._json(502, {"error": "No English translation came back."})
+        if not result["translation"]:
+            self._json(502, {"error": f"No {result['target']} translation came back."})
             return
         self._json(200, result)
+
+    def _save_settings(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length > 20_000:
+            self._json(413, {"error": "That text is too long."})
+            return
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._json(400, {"error": "Send the languages as JSON."})
+            return
+        if not isinstance(body, dict):
+            body = {}
+        self._json(200, store_language_settings(body.get("source"), body.get("target")))
 
     def _dictate(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -405,7 +506,7 @@ def main():
     if shared:
         print(f"On your phone, open {shared}", flush=True)
     print("Close this window to stop it.", flush=True)
-    if "--no-browser" not in sys.argv:
+    if "--browser" in sys.argv:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()

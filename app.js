@@ -6,33 +6,128 @@ const copyBtn = document.querySelector("#copy");
 const clearBtn = document.querySelector("#clear");
 const translateBtn = document.querySelector("#translate");
 const statusEl = document.querySelector("#status");
+const targetSelect = document.querySelector("#target");
+const targetWrap = document.querySelector("#target-wrap");
+const modeButtons = [...document.querySelectorAll(".mode")];
 
 const MAX = 12000;
+const MODES = {
+  "to-english": { source: "auto", placeholder: "Paste or type anything…" },
+  "from-english": { source: "en", placeholder: "Type or paste English…" },
+  any: { source: "auto", placeholder: "Paste or type anything…" },
+};
 let timer = 0;
 let controller = null;
 let lastSent = null;
-let latestEnglish = "";
+let latestTranslation = "";
+let mode = "to-english";
+
+const sampleButtons = [...document.querySelectorAll("[data-sample]")];
+const foreignSamples = sampleButtons.map((button) => ({
+  label: button.textContent,
+  text: button.dataset.sample,
+}));
+const englishSamples = [
+  { label: "Station", text: "Where is the nearest train station?" },
+  { label: "Cafe", text: "I would like a coffee and a slice of cake, please." },
+  { label: "Cinema", text: "We're going to the cinema tonight. Don't be late." },
+  { label: "Meeting", text: "Let's meet in front of the station tomorrow afternoon." },
+  { label: "Friday", text: "Please send me this file before Friday." },
+];
+
+function targetCode() {
+  if (mode === "to-english") return "en";
+  return targetSelect.value || "es";
+}
+
+function targetName() {
+  if (mode === "to-english") return "English";
+  const option = targetSelect.selectedOptions[0];
+  return option ? option.textContent : "Spanish";
+}
+
+function emptyLine() {
+  return `${targetName()} lands here.`;
+}
+
+function requestKey(text) {
+  return `${mode}|${targetCode()}|${text}`;
+}
 
 function setOutput(text, empty) {
   output.textContent = text;
   output.dataset.empty = empty ? "true" : "false";
-  latestEnglish = empty ? "" : text;
+  latestTranslation = empty ? "" : text;
+}
+
+function showSamples() {
+  const list = mode === "from-english" ? englishSamples : foreignSamples;
+  sampleButtons.forEach((button, index) => {
+    const sample = list[index];
+    button.hidden = !sample;
+    if (!sample) return;
+    button.textContent = sample.label;
+    button.dataset.sample = sample.text;
+  });
+}
+
+function remember(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* The page still works if storage is blocked. */
+  }
+}
+
+function recall(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function applyMode(next, options = {}) {
+  mode = MODES[next] ? next : "to-english";
+  modeButtons.forEach((button) => {
+    const on = button.dataset.mode === mode;
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  targetWrap.hidden = mode === "to-english";
+  source.placeholder = MODES[mode].placeholder;
+  showSamples();
+  if (options.persist !== false) remember("translator-mode", mode);
+  if (!source.value.trim()) setOutput(emptyLine(), true);
+  if (!options.silent) {
+    if (controller) controller.abort();
+    lastSent = null;
+    translate(false);
+  }
 }
 
 function setStatus(message) {
   statusEl.textContent = message;
 }
 
+function stampText(data) {
+  if (mode === "to-english") return data.language || "Unknown";
+  if (mode === "from-english") return data.target || targetName();
+  const from = data.language || "Unknown";
+  const to = data.target || targetName();
+  return `${from} → ${to}`;
+}
+
 async function translate(manual) {
   const raw = source.value;
   const text = raw.trim();
   count.textContent = String(raw.length);
-  count.style.color = raw.length > MAX ? "#9f2d16" : "";
+  count.style.color = raw.length > MAX ? "#ff8f78" : "";
 
   if (!text) {
     lastSent = "";
     detected.textContent = "Waiting";
-    setOutput("English lands here.", true);
+    setOutput(emptyLine(), true);
     setStatus("");
     return;
   }
@@ -42,8 +137,9 @@ async function translate(manual) {
     return;
   }
 
-  if (!manual && text === lastSent) return;
-  lastSent = text;
+  const sent = requestKey(text);
+  if (!manual && sent === lastSent) return;
+  lastSent = sent;
 
   if (!window.ToEnglishNative && location.protocol === "file:") {
     setStatus("Double-click start.bat so this page can translate.");
@@ -52,18 +148,20 @@ async function translate(manual) {
 
   const request = new AbortController();
   controller = request;
-  setStatus("Detecting language…");
+  const sourceCode = MODES[mode].source;
+  const into = targetCode();
+  setStatus(mode === "to-english" ? "Detecting language…" : "Translating…");
   translateBtn.disabled = true;
 
   try {
     let data;
     if (window.ToEnglishNative) {
-      data = await translateWithNative(text);
+      data = await translateWithNative(text, sourceCode, into);
     } else {
       const response = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, source: sourceCode, target: into }),
         signal: request.signal,
       });
       data = await response.json().catch(() => ({}));
@@ -71,9 +169,10 @@ async function translate(manual) {
         throw new Error(data.error || "Translation failed.");
       }
     }
-    if (request.signal.aborted || source.value.trim() !== text) return;
-    detected.textContent = data.language || "Unknown";
-    setOutput(data.english || "", !data.english);
+    if (request.signal.aborted || requestKey(source.value.trim()) !== sent) return;
+    detected.textContent = stampText(data);
+    const translation = data.translation || data.english || "";
+    setOutput(translation, !translation);
     setStatus(data.note || "");
   } catch (error) {
     if (error.name === "AbortError") return;
@@ -85,7 +184,7 @@ async function translate(manual) {
 
 source.addEventListener("input", () => {
   count.textContent = String(source.value.length);
-  count.style.color = source.value.length > MAX ? "#9f2d16" : "";
+  count.style.color = source.value.length > MAX ? "#ff8f78" : "";
   window.clearTimeout(timer);
   if (controller) controller.abort();
   timer = window.setTimeout(() => translate(false), 450);
@@ -105,7 +204,7 @@ clearBtn.addEventListener("click", () => {
   lastSent = "";
   if (controller) controller.abort();
   detected.textContent = "Waiting";
-  setOutput("English lands here.", true);
+  setOutput(emptyLine(), true);
   setStatus("");
   count.textContent = "0";
   source.focus();
@@ -136,8 +235,8 @@ async function copyText(text) {
 }
 
 copyBtn.addEventListener("click", async () => {
-  if (!latestEnglish) return;
-  await copyText(latestEnglish);
+  if (!latestTranslation) return;
+  await copyText(latestTranslation);
   const previous = copyBtn.textContent;
   copyBtn.textContent = "Copied";
   window.setTimeout(() => {
@@ -280,7 +379,7 @@ copyPhone.addEventListener("click", async () => {
 let nativeSeq = 0;
 const nativeWaiters = new Map();
 
-function translateWithNative(text) {
+function translateWithNative(text, sourceCode, into) {
   return new Promise((resolve, reject) => {
     const id = String(++nativeSeq);
     const timer = window.setTimeout(() => {
@@ -303,7 +402,11 @@ function translateWithNative(text) {
       }
       resolve(data);
     });
-    window.ToEnglishNative.translate(id, text);
+    try {
+      window.ToEnglishNative.translate(id, text, sourceCode, into);
+    } catch {
+      window.ToEnglishNative.translate(id, text);
+    }
   });
 }
 
@@ -321,4 +424,150 @@ window.receiveSharedText = (text) => {
   translate(true);
 };
 
+modeButtons.forEach((button) => {
+  button.addEventListener("click", () => applyMode(button.dataset.mode));
+});
+
+targetSelect.addEventListener("change", () => {
+  remember("translator-target", targetSelect.value);
+  if (!source.value.trim()) {
+    setOutput(emptyLine(), true);
+    return;
+  }
+  if (controller) controller.abort();
+  lastSent = null;
+  translate(false);
+});
+
+const savedMode = recall("translator-mode");
+const savedTarget = recall("translator-target");
+if (savedTarget && [...targetSelect.options].some((option) => option.value === savedTarget)) {
+  targetSelect.value = savedTarget;
+}
+applyMode(savedMode || "to-english", { silent: true, persist: false });
+
 if (!window.ToEnglishNative) loadPhoneLink();
+
+const holdMenu = document.querySelector("#hold-menu");
+const holdTranslate = document.querySelector("#hold-translate");
+const modeSheet = document.querySelector("#mode-sheet");
+const modePreview = document.querySelector("#mode-preview");
+const sheetTarget = document.querySelector("#sheet-target");
+const sheetLang = document.querySelector("#sheet-lang");
+const modeGo = document.querySelector("#mode-go");
+const modeCancel = document.querySelector("#mode-cancel");
+const pickButtons = modeSheet ? [...modeSheet.querySelectorAll("[data-pick]")] : [];
+let heldText = "";
+let pickedMode = mode;
+let holdTimer = 0;
+
+if (sheetLang && targetSelect) sheetLang.innerHTML = targetSelect.innerHTML;
+
+function phoneSurface() {
+  return document.body.classList.contains("on-phone")
+    || document.body.classList.contains("installed")
+    || window.matchMedia("(pointer: coarse)").matches
+    || window.matchMedia("(hover: none)").matches;
+}
+
+function selectedText() {
+  const selection = window.getSelection?.();
+  const anchor = selection?.anchorNode;
+  const anchorEl = anchor?.nodeType === 1 ? anchor : anchor?.parentElement;
+  if (anchorEl?.closest?.("#hold-menu, #mode-sheet")) return "";
+  if (document.activeElement === source) {
+    const start = source.selectionStart ?? 0;
+    const end = source.selectionEnd ?? start;
+    if (end > start) return source.value.slice(start, end).trim();
+  }
+  return selection?.toString().trim() || "";
+}
+
+function refreshHold() {
+  if (!holdMenu || !phoneSurface() || (modeSheet && !modeSheet.hidden)) return;
+  const text = selectedText();
+  if (!text) {
+    holdMenu.hidden = true;
+    return;
+  }
+  heldText = text;
+  holdMenu.hidden = false;
+}
+
+function scheduleHold() {
+  window.clearTimeout(holdTimer);
+  holdTimer = window.setTimeout(refreshHold, 80);
+}
+
+function highlightPick(next) {
+  pickedMode = MODES[next] ? next : "to-english";
+  pickButtons.forEach((button) => {
+    const on = button.dataset.pick === pickedMode;
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  if (sheetTarget) sheetTarget.hidden = pickedMode === "to-english";
+}
+
+function openModeSheet() {
+  const text = selectedText() || heldText;
+  if (!text || !modeSheet) return;
+  heldText = text;
+  if (sheetLang) sheetLang.value = targetSelect.value;
+  highlightPick(mode);
+  const excerpt = text.replace(/\s+/g, " ").trim();
+  modePreview.textContent = excerpt.length > 160 ? `${excerpt.slice(0, 157)}…` : excerpt;
+  modeSheet.hidden = false;
+  holdMenu.hidden = true;
+  pickButtons[0]?.focus();
+}
+
+function closeModeSheet() {
+  if (modeSheet) modeSheet.hidden = true;
+  scheduleHold();
+}
+
+document.addEventListener("selectionchange", scheduleHold);
+source.addEventListener("touchend", scheduleHold);
+source.addEventListener("mouseup", scheduleHold);
+document.addEventListener("contextmenu", () => {
+  if (phoneSurface()) scheduleHold();
+});
+
+if (holdTranslate) {
+  holdTranslate.addEventListener("pointerdown", () => {
+    const text = selectedText();
+    if (text) heldText = text;
+  });
+  holdTranslate.addEventListener("click", openModeSheet);
+}
+
+pickButtons.forEach((button) => {
+  button.addEventListener("click", () => highlightPick(button.dataset.pick));
+});
+
+modeCancel?.addEventListener("click", closeModeSheet);
+modeSheet?.addEventListener("click", (event) => {
+  if (event.target === modeSheet) closeModeSheet();
+});
+
+modeGo?.addEventListener("click", async () => {
+  const text = heldText.trim();
+  closeModeSheet();
+  if (!text) return;
+  if (text.length > MAX) {
+    setStatus(`Keep it under ${MAX.toLocaleString()} characters.`);
+    return;
+  }
+  source.value = text;
+  count.textContent = String(text.length);
+  if (controller) controller.abort();
+  lastSent = null;
+  if (pickedMode !== "to-english" && sheetLang) {
+    targetSelect.value = sheetLang.value;
+    remember("translator-target", targetSelect.value);
+  }
+  applyMode(pickedMode, { silent: true });
+  await translate(true);
+  output.scrollIntoView({ behavior: "smooth", block: "center" });
+});

@@ -39,8 +39,18 @@ final class Translator {
     }
 
     static String translate(String text) throws Exception {
+        return translate(text, "auto", "en");
+    }
+
+    static String translate(String text, String source, String target) throws Exception {
         if (text == null) text = "";
         text = text.trim();
+        if (source == null || source.isEmpty() || (!"auto".equals(source) && !names.has(source))) {
+            source = "auto";
+        }
+        if (target == null || target.isEmpty() || (names.length() > 0 && !names.has(target))) {
+            target = "en";
+        }
         if (text.isEmpty()) {
             return error("Enter some text to translate.");
         }
@@ -49,31 +59,48 @@ final class Translator {
         }
         List<Piece> pieces = new ArrayList<>();
         for (String part : split(text)) {
-            pieces.add(translateChunk(part));
+            pieces.add(translateChunk(part, source, target));
         }
         Piece best = pieces.get(0);
         for (Piece piece : pieces) {
             if (piece.weight > best.weight) best = piece;
         }
-        StringBuilder english = new StringBuilder();
-        for (Piece piece : pieces) english.append(piece.english);
-        String joined = english.toString().trim();
+        StringBuilder translated = new StringBuilder();
+        for (Piece piece : pieces) translated.append(piece.translation);
+        String joined = translated.toString().trim();
+        String targetName = languageName(target);
         if (joined.isEmpty()) {
-            return error("No English translation came back.");
+            return error("No " + targetName + " translation came back.");
         }
         String note = "";
-        if ("en".equals(best.code)) {
-            note = "This already looks like English.";
-        } else if (best.confidence != null && best.confidence < 0.35) {
+        if (sameLanguage(best.code, target)) {
+            note = "This already looks like " + targetName + ".";
+        } else if ("en".equals(source) && best.code != null && !best.code.isEmpty() && !sameLanguage(best.code, "en")) {
+            note = "That was read as " + languageName(best.code) + ", not English.";
+        } else if ("auto".equals(source) && best.confidence != null && best.confidence < 0.35) {
             note = "Low confidence. A very short line can be hard to place.";
         }
         JSONObject result = new JSONObject();
-        result.put("english", joined);
+        result.put("translation", joined);
+        if ("en".equals(target)) result.put("english", joined);
         result.put("language", languageName(best.code));
         result.put("code", best.code);
+        result.put("target", targetName);
+        result.put("targetCode", target);
         if (best.confidence != null) result.put("confidence", best.confidence);
         result.put("note", note);
         return result.toString();
+    }
+
+    static boolean knownLanguage(String code) {
+        return code != null && names.has(code);
+    }
+
+    static List<String> languageCodes() {
+        List<String> codes = new ArrayList<>();
+        java.util.Iterator<String> keys = names.keys();
+        while (keys.hasNext()) codes.add(keys.next());
+        return codes;
     }
 
     private static String error(String message) {
@@ -84,7 +111,14 @@ final class Translator {
         }
     }
 
-    private static String languageName(String code) {
+    private static boolean sameLanguage(String detected, String target) {
+        if (detected == null || detected.isEmpty() || target == null || target.isEmpty()) return false;
+        if (detected.equals(target)) return true;
+        if (!target.contains("-") && detected.split("-")[0].equals(target)) return true;
+        return false;
+    }
+
+    static String languageName(String code) {
         if (code == null || code.isEmpty()) return "Unknown";
         String name = names.optString(code, "");
         if (!name.isEmpty()) return name;
@@ -113,10 +147,10 @@ final class Translator {
         return parts;
     }
 
-    private static Piece translateChunk(String text) throws Exception {
+    private static Piece translateChunk(String text, String source, String target) throws Exception {
         String body = "client=" + enc("gtx")
-                + "&sl=" + enc("auto")
-                + "&tl=" + enc("en")
+                + "&sl=" + enc(source)
+                + "&tl=" + enc(target)
                 + "&dt=" + enc("t")
                 + "&dj=" + enc("1")
                 + "&q=" + enc(text);
@@ -145,12 +179,12 @@ final class Translator {
         connection.disconnect();
         JSONObject data = new JSONObject(buffer.toString(StandardCharsets.UTF_8.name()));
         JSONArray sentences = data.optJSONArray("sentences");
-        StringBuilder english = new StringBuilder();
+        StringBuilder translated = new StringBuilder();
         if (sentences != null) {
             for (int i = 0; i < sentences.length(); i++) {
                 JSONObject sentence = sentences.optJSONObject(i);
                 if (sentence != null && sentence.has("trans")) {
-                    english.append(sentence.optString("trans"));
+                    translated.append(sentence.optString("trans"));
                 }
             }
         }
@@ -158,7 +192,7 @@ final class Translator {
         if (data.has("confidence") && !data.isNull("confidence")) {
             confidence = data.optDouble("confidence");
         }
-        return new Piece(english.toString(), data.optString("src", ""), confidence, text.length());
+        return new Piece(translated.toString(), data.optString("src", ""), confidence, text.length());
     }
 
     private static String enc(String value) throws Exception {
@@ -166,13 +200,13 @@ final class Translator {
     }
 
     private static final class Piece {
-        final String english;
+        final String translation;
         final String code;
         final Double confidence;
         final int weight;
 
-        Piece(String english, String code, Double confidence, int weight) {
-            this.english = english;
+        Piece(String translation, String code, Double confidence, int weight) {
+            this.translation = translation;
             this.code = code;
             this.confidence = confidence;
             this.weight = weight;
