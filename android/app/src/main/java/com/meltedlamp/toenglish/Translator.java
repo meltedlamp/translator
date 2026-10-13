@@ -43,6 +43,10 @@ final class Translator {
     }
 
     static String translate(String text, String source, String target) throws Exception {
+        return translate(text, source, target, true);
+    }
+
+    private static String translate(String text, String source, String target, boolean retry) throws Exception {
         if (text == null) text = "";
         text = text.trim();
         if (source == null || source.isEmpty() || (!"auto".equals(source) && !names.has(source))) {
@@ -56,6 +60,13 @@ final class Translator {
         }
         if (text.length() > MAX_CHARS) {
             return error("Keep it under " + String.format("%,d", MAX_CHARS) + " characters.");
+        }
+        String original = text;
+        org.json.JSONArray fixes = new org.json.JSONArray();
+        if ("en".equals(source)) {
+            Brain.Outcome studied = Brain.study(text);
+            text = studied.text;
+            fixes = studied.fixes;
         }
         List<Piece> pieces = new ArrayList<>();
         for (String part : split(text)) {
@@ -72,6 +83,33 @@ final class Translator {
         if (joined.isEmpty()) {
             return error("No " + targetName + " translation came back.");
         }
+        if (retry && !"en".equals(source) && sameLanguage(best.code, "en")) {
+            Brain.Outcome studied = Brain.study(original);
+            fixes = joinFixes(fixes, studied.fixes);
+            if (!studied.text.equals(original) && !sameLanguage(best.code, target)) {
+                try {
+                    JSONObject parsed = new JSONObject(translate(studied.text, "en", target, false));
+                    JSONArray inner = new JSONArray();
+                    JSONObject brain = parsed.optJSONObject("brain");
+                    if (brain != null && brain.optJSONArray("fixes") != null) inner = brain.optJSONArray("fixes");
+                    JSONArray merged = joinFixes(studied.fixes, inner);
+                    parsed.put("brain", Brain.snapshot(merged));
+                    String learned = Brain.noteFor(merged);
+                    String existing = parsed.optString("note", "");
+                    if (!learned.isEmpty() && !existing.contains("Brain kept")) {
+                        parsed.put("note", (existing + " " + learned).trim());
+                    }
+                    return parsed.toString();
+                } catch (Exception ignored) {
+                    /* Keep the first translation if the corrected line cannot be sent. */
+                }
+            }
+        }
+        if ("en".equals(target)) {
+            Brain.Outcome studied = Brain.study(joined);
+            joined = studied.text;
+            fixes = joinFixes(fixes, studied.fixes);
+        }
         String note = "";
         if (sameLanguage(best.code, target)) {
             note = "This already looks like " + targetName + ".";
@@ -80,6 +118,8 @@ final class Translator {
         } else if ("auto".equals(source) && best.confidence != null && best.confidence < 0.35) {
             note = "Low confidence. A very short line can be hard to place.";
         }
+        String learned = Brain.noteFor(fixes);
+        if (!learned.isEmpty()) note = (note + " " + learned).trim();
         JSONObject result = new JSONObject();
         result.put("translation", joined);
         if ("en".equals(target)) result.put("english", joined);
@@ -89,7 +129,19 @@ final class Translator {
         result.put("targetCode", target);
         if (best.confidence != null) result.put("confidence", best.confidence);
         result.put("note", note);
+        result.put("brain", Brain.snapshot(fixes));
         return result.toString();
+    }
+
+    private static org.json.JSONArray joinFixes(org.json.JSONArray first, org.json.JSONArray second) {
+        org.json.JSONArray joined = new org.json.JSONArray();
+        if (first != null) {
+            for (int i = 0; i < first.length(); i++) joined.put(first.opt(i));
+        }
+        if (second != null) {
+            for (int i = 0; i < second.length(); i++) joined.put(second.opt(i));
+        }
+        return joined;
     }
 
     static boolean knownLanguage(String code) {

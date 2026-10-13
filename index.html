@@ -24,6 +24,13 @@
       <p class="hint desk-only">Select text in Discord or any other app and press <kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>E</kbd>. The translation stays on top of that app. Paste puts it back where you were typing.</p>
     </header>
 
+    <section id="side-setting" class="side-setting">
+      <p class="kicker">Side tab</p>
+      <h2>Use it in any app</h2>
+      <p>Turn this on and a small tab stays on the edge of the screen. Long-press text, tap the tab, then add more of that passage before it translates. If Side translate has no switch, open this app’s info and allow restricted settings.</p>
+      <button type="button" id="side-toggle" class="solid" aria-pressed="false">Turn on the side tab</button>
+    </section>
+
     <div class="langs">
       <label class="lang">
         <span>From</span>
@@ -172,8 +179,9 @@
           <span id="detected" class="stamp">Waiting</span>
           <button type="button" id="copy" class="ghost">Copy</button>
         </div>
-        <div id="output" class="output" data-empty="true" aria-live="polite">Translation lands here.</div>
+        <div id="output" class="output" contenteditable="false" spellcheck="true" data-empty="true" aria-live="polite">Translation lands here.</div>
         <p id="status" class="status" role="status"></p>
+        <p id="brain" class="brain"></p>
       </section>
     </div>
 
@@ -210,9 +218,9 @@
       <button type="button" data-sample="من فضلك أرسل هذا الملف قبل يوم الجمعة.">Arabic</button>
     </div>
 
-    <p class="fine desk-only">Hold the right Ctrl key to dictate into the app you're using. Nothing is saved.</p>
-    <p class="fine phone-only">Choose From and Into above, select a line, and tap Translate. Nothing is saved. This phone uses your laptop, so the laptop stays on and both stay on the same Wi-Fi.</p>
-    <p class="fine installed-only">Choose From and Into above, then select words in another app and tap Translate. Nothing is saved on this device.</p>
+    <p class="fine desk-only">Hold the right Ctrl key to dictate into the app you're using. The grammar brain stays in this folder and keeps learning on this device.</p>
+    <p class="fine phone-only">Choose From and Into above, select a line, and tap Translate. The grammar brain stays on the computer you downloaded, and it keeps learning there. This phone uses your laptop, so the laptop stays on and both stay on the same Wi-Fi.</p>
+    <p class="fine installed-only">Turn on the side tab, long-press text in any app, then tap the tab. More adds the next part of that passage. You can also long-press and choose Translate. The grammar brain stays on this phone and keeps learning from the text.</p>
   </main>
   <div id="hold-menu" class="hold-menu" hidden>
     <span id="hold-label">Text selected</span>

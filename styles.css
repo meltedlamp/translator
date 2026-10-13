@@ -242,6 +242,14 @@ textarea::placeholder {
   font-size: 19px;
 }
 
+.output:focus {
+  outline: none;
+}
+
+.output[contenteditable="true"] {
+  cursor: text;
+}
+
 .stamp {
   display: inline-flex;
   align-items: center;
@@ -298,6 +306,14 @@ button.hearing {
   margin: 8px 2px 0;
   color: var(--muted);
   font-size: 14px;
+}
+
+.brain {
+  min-height: 1.2em;
+  margin: 2px 2px 0;
+  color: #8f867b;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .samples {
@@ -527,6 +543,34 @@ body.installed .desk-only,
 body.installed .phone-only,
 body.installed .phone { display: none; }
 body.installed .installed-only { display: block; }
+
+.side-setting { display: none; }
+
+body.installed .side-setting {
+  display: block;
+  margin: 16px 0 4px;
+  padding: 16px 16px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.side-setting h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+.side-setting p:not(.kicker) {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.side-setting .solid { margin-top: 14px; }
 
 @media (max-width: 800px) {
   .desk {

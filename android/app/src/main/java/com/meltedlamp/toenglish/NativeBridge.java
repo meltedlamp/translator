@@ -1,5 +1,9 @@
 package com.meltedlamp.toenglish;
 
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
+import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
@@ -36,6 +40,37 @@ final class NativeBridge {
                     + JSONObject.quote(payload)
                     + ")";
             webView.post(() -> webView.evaluateJavascript(script, null));
+        });
+    }
+
+    @JavascriptInterface
+    public String brainStatus() {
+        return Brain.status().toString();
+    }
+
+    @JavascriptInterface
+    public String teach(String before, String after) {
+        return Brain.teach(before, after).toString();
+    }
+
+    @JavascriptInterface
+    public void openSideSetting() {
+        Context context = webView.getContext();
+        webView.post(() -> {
+            ComponentName component = new ComponentName(context, SideTranslateService.class);
+            Intent details = new Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS");
+            details.putExtra("android.intent.extra.COMPONENT_NAME", component.flattenToString());
+            details.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                context.startActivity(details);
+            } catch (Exception ex) {
+                Intent list = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                list.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    context.startActivity(list);
+                } catch (Exception ignored) {
+                }
+            }
         });
     }
 }

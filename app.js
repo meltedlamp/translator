@@ -9,6 +9,7 @@ const statusEl = document.querySelector("#status");
 const fromLang = document.querySelector("#from-lang");
 const intoLang = document.querySelector("#into-lang");
 const swapBtn = document.querySelector("#swap");
+const brainEl = document.querySelector("#brain");
 
 const MAX = 12000;
 let timer = 0;
@@ -58,11 +59,93 @@ function requestKey(text) {
   return `${sourceCode()}|${targetCode()}|${text}`;
 }
 
+let armedTranslation = "";
+
 function setOutput(text, empty) {
   output.textContent = text;
+  output.contentEditable = empty ? "false" : "true";
   output.dataset.empty = empty ? "true" : "false";
   latestTranslation = empty ? "" : text;
+  armedTranslation = latestTranslation;
 }
+
+function brainPlace() {
+  if (document.body.classList.contains("installed")) return "on this phone";
+  if (document.body.classList.contains("on-phone")) return "on the computer you downloaded";
+  return "in this folder";
+}
+
+function showBrain(data) {
+  if (!brainEl) return;
+  const count = data && Number.isFinite(Number(data.lessons)) ? Number(data.lessons) : 0;
+  const lessons = count === 1 ? "1 lesson" : `${count} lessons`;
+  brainEl.textContent = `Brain stays ${brainPlace()} · ${lessons}. It keeps learning from grammar in the text.`;
+}
+
+function readNativeBrain(method, args) {
+  const native = window.ToEnglishNative;
+  if (!native || typeof native[method] !== "function") return null;
+  try {
+    return JSON.parse(native[method](...args) || "{}");
+  } catch {
+    return null;
+  }
+}
+
+async function loadBrain() {
+  const native = readNativeBrain("brainStatus", []);
+  if (native) {
+    showBrain(native);
+    return;
+  }
+  try {
+    const response = await fetch("/api/brain");
+    if (response.ok) showBrain(await response.json());
+  } catch {
+    /* The page still translates if the brain file cannot be read. */
+  }
+}
+
+async function teachBrain(before, after) {
+  const native = readNativeBrain("teach", [before, after]);
+  if (native) return native;
+  const response = await fetch("/api/brain", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ before, after }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "The brain could not keep that edit.");
+  return data;
+}
+
+function outputText() {
+  return (output.innerText || "").replace(/\u00a0/g, " ").replace(/\r\n/g, "\n");
+}
+
+output.addEventListener("input", () => {
+  if (output.dataset.empty === "true") return;
+  latestTranslation = outputText();
+});
+
+output.addEventListener("blur", async () => {
+  if (output.dataset.empty === "true") return;
+  const now = outputText().trim();
+  const before = armedTranslation.trim();
+  if (!before || now === before) return;
+  output.textContent = outputText().trim();
+  armedTranslation = output.textContent;
+  latestTranslation = armedTranslation;
+  try {
+    const data = await teachBrain(before, now);
+    showBrain(data);
+    if (data.lesson && data.lesson.wrong) {
+      setStatus(`Brain learned “${data.lesson.wrong}” → “${data.lesson.right}” and kept it on this device.`);
+    }
+  } catch (error) {
+    setStatus(error.message || "The brain could not keep that edit.");
+  }
+});
 
 function showSamples() {
   const list = sourceCode() === "en" ? englishSamples : foreignSamples;
@@ -158,6 +241,7 @@ async function translate(manual) {
     const translation = data.translation || data.english || "";
     setOutput(translation, !translation);
     setStatus(data.note || "");
+    if (data.brain) showBrain(data.brain);
   } catch (error) {
     if (error.name === "AbortError") return;
     setStatus(error.message || "Something went wrong.");
@@ -316,6 +400,21 @@ if (speakBtn && !window.ToEnglishNative && window.isSecureContext && navigator.m
 }
 
 const onThisPc = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+const sideToggle = document.querySelector("#side-toggle");
+
+function paintSide(on) {
+  if (!sideToggle) return;
+  const enabled = !!on;
+  sideToggle.textContent = enabled ? "Side tab is on" : "Turn on the side tab";
+  sideToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+}
+
+window.onSideStatus = paintSide;
+
+if (sideToggle && window.ToEnglishNative) {
+  sideToggle.addEventListener("click", () => window.ToEnglishNative.openSideSetting());
+}
+
 if (window.ToEnglishNative) {
   document.body.classList.add("installed");
   document.querySelector(".voice")?.remove();
@@ -482,6 +581,7 @@ swapBtn.addEventListener("click", () => {
 });
 
 loadSharedLanguages();
+loadBrain();
 
 const holdMenu = document.querySelector("#hold-menu");
 const holdTranslate = document.querySelector("#hold-translate");

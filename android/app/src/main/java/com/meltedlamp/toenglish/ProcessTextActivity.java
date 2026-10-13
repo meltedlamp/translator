@@ -7,6 +7,8 @@ import android.content.Intent;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
+import android.text.TextUtils;
+import android.text.method.ScrollingMovementMethod;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -21,6 +23,7 @@ import android.widget.TextView;
 
 import org.json.JSONObject;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -37,11 +40,27 @@ public class ProcessTextActivity extends Activity {
 
     private final ExecutorService pool = Executors.newSingleThreadExecutor();
 
+    private static final int MAX_CHARS = 12000;
+
     private FrameLayout stage;
     private TextView title;
     private TextView preview;
     private TextView status;
+    private LinearLayout expandRow;
+    private Button lessButton;
+    private Button moreButton;
+    private TextView amountView;
     private String selected = "";
+    private String passage = "";
+    private int rangeStart;
+    private int rangeEnd;
+    private int anchorStart;
+    private int anchorEnd;
+    private boolean sideMode;
+    private boolean grewForward = true;
+    private String lastSource = "auto";
+    private String lastTarget = "en";
+    private final ArrayDeque<int[]> rangeHistory = new ArrayDeque<>();
     private boolean readOnly = true;
     private String step = "from";
     private String pendingSource = "auto";
@@ -55,12 +74,21 @@ public class ProcessTextActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setResult(RESULT_CANCELED);
+        Brain.open(getFilesDir());
         Translator.loadNames(getAssets());
         setContentView(R.layout.process_text);
         stage = findViewById(R.id.stage);
         title = findViewById(R.id.title);
         preview = findViewById(R.id.preview);
         status = findViewById(R.id.status);
+        expandRow = findViewById(R.id.expand);
+        lessButton = findViewById(R.id.less);
+        moreButton = findViewById(R.id.more);
+        amountView = findViewById(R.id.amount);
+        lessButton.setBackgroundTintList(null);
+        moreButton.setBackgroundTintList(null);
+        lessButton.setOnClickListener(view -> expandLess());
+        moreButton.setOnClickListener(view -> expandMore());
         preview.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG);
         View root = findViewById(R.id.root);
         padLeft = root.getPaddingLeft();
@@ -114,11 +142,64 @@ public class ProcessTextActivity extends Activity {
     }
 
     private boolean readIntent(Intent intent) {
-        if (intent == null || !Intent.ACTION_PROCESS_TEXT.equals(intent.getAction())) return false;
+        rangeHistory.clear();
+        sideMode = false;
+        grewForward = true;
+        if (intent == null) return false;
+        if (SideTranslateService.ACTION_SIDE.equals(intent.getAction())) {
+            String raw = intent.getStringExtra(SideTranslateService.EXTRA_PASSAGE);
+            int start = intent.getIntExtra(SideTranslateService.EXTRA_START, 0);
+            int end = intent.getIntExtra(SideTranslateService.EXTRA_END, raw == null ? 0 : raw.length());
+            if (!bindRange(raw, start, end)) return false;
+            readOnly = true;
+            sideMode = true;
+            selected = currentSlice();
+            return !selected.isEmpty();
+        }
+        if (!Intent.ACTION_PROCESS_TEXT.equals(intent.getAction())) return false;
         CharSequence raw = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
         selected = raw == null ? "" : raw.toString().trim();
         readOnly = intent.getBooleanExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true);
-        return !selected.isEmpty();
+        if (selected.isEmpty()) return false;
+        passage = selected;
+        rangeStart = 0;
+        rangeEnd = selected.length();
+        anchorStart = 0;
+        anchorEnd = selected.length();
+        adoptLargerPassage(selected);
+        return true;
+    }
+
+    private boolean bindRange(String raw, int start, int end) {
+        passage = raw == null ? "" : raw;
+        if (passage.isEmpty()) return false;
+        if (start > end) {
+            int swap = start;
+            start = end;
+            end = swap;
+        }
+        rangeStart = Math.max(0, Math.min(start, passage.length()));
+        rangeEnd = Math.max(rangeStart, Math.min(end, passage.length()));
+        if (rangeStart == rangeEnd) return false;
+        anchorStart = rangeStart;
+        anchorEnd = rangeEnd;
+        return true;
+    }
+
+    private void adoptLargerPassage(String wanted) {
+        SideTranslateService.Snapshot snap = SideTranslateService.latest();
+        if (snap == null || wanted.isEmpty()) return;
+        String window = snap.text;
+        if (window == null || snap.start < 0 || snap.end > window.length() || snap.start >= snap.end) return;
+        String slice = window.substring(snap.start, snap.end).trim();
+        if (slice.isEmpty() || !slice.equals(wanted)) return;
+        passage = window;
+        rangeStart = snap.start;
+        rangeEnd = snap.end;
+        anchorStart = rangeStart;
+        anchorEnd = rangeEnd;
+        sideMode = passage.length() > (anchorEnd - anchorStart);
+        selected = currentSlice();
     }
 
     private void showFrom() {
@@ -135,8 +216,12 @@ public class ProcessTextActivity extends Activity {
     private void showLanguageStep(String nextStep, String heading, boolean includeDetect, java.util.function.Consumer<String> onPick) {
         step = nextStep;
         title.setText(heading);
-        preview.setText(previewOf(selected));
-        status.setText("This is the text you selected.");
+        selected = currentSlice();
+        showPassage();
+        status.setText(sideMode
+                ? "More adds the next sentence. Less goes back toward what you first held."
+                : "This is the text you selected.");
+        syncExpand();
         List<LangRow> rows = languageRows(includeDetect);
         ListView list = new ListView(this);
         list.setAdapter(new LanguageAdapter(rows));
@@ -148,7 +233,7 @@ public class ProcessTextActivity extends Activity {
             if (row.code == null) return;
             onPick.accept(row.code);
         });
-        setStageHeight(dp(340));
+        setStageHeight(dp(sideMode ? 240 : 340));
         stage.removeAllViews();
         stage.addView(list, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -158,6 +243,8 @@ public class ProcessTextActivity extends Activity {
 
     private void beginTranslate(String source, String target) {
         step = "result";
+        lastSource = source;
+        lastTarget = target;
         final int gen = ++generation;
         final String text = selected;
         title.setText("Translating…");
@@ -198,7 +285,8 @@ public class ProcessTextActivity extends Activity {
         String language = data.optString("language", "Unknown");
         String target = data.optString("target", "English");
         title.setText(language.equals(target) ? language : language + " → " + target);
-        preview.setText(previewOf(selected));
+        showPassage();
+        syncExpand();
         status.setText(data.optString("note", ""));
         TextView body = new TextView(this);
         body.setText(translation);
@@ -323,6 +411,174 @@ public class ProcessTextActivity extends Activity {
         if (!more.isEmpty()) rows.add(new LangRow(null, "More"));
         rows.addAll(more);
         return rows;
+    }
+
+    private void expandMore() {
+        if (!canGrow()) return;
+        int nextStart = rangeStart;
+        int nextEnd = rangeEnd;
+        boolean forward = false;
+        if (rangeEnd < passage.length()) {
+            int forwardEnd = stepForward(passage, rangeEnd);
+            if (forwardEnd != rangeEnd) {
+                nextEnd = forwardEnd;
+                forward = true;
+            }
+        }
+        if (nextEnd == rangeEnd && rangeStart > 0) {
+            int backwardStart = stepBackward(passage, rangeStart);
+            if (backwardStart != rangeStart) nextStart = backwardStart;
+        }
+        if (nextStart == rangeStart && nextEnd == rangeEnd) return;
+        String next = passage.substring(nextStart, nextEnd).trim();
+        if (next.length() > MAX_CHARS) {
+            status.setText("Keep it under 12,000 characters.");
+            return;
+        }
+        rangeHistory.addLast(new int[]{rangeStart, rangeEnd});
+        rangeStart = nextStart;
+        rangeEnd = nextEnd;
+        grewForward = forward;
+        onRangeChanged();
+    }
+
+    private void expandLess() {
+        if (rangeHistory.isEmpty()) {
+            rangeStart = anchorStart;
+            rangeEnd = anchorEnd;
+        } else {
+            int[] previous = rangeHistory.removeLast();
+            rangeStart = previous[0];
+            rangeEnd = previous[1];
+        }
+        grewForward = false;
+        onRangeChanged();
+    }
+
+    private void onRangeChanged() {
+        selected = currentSlice();
+        showPassage();
+        syncExpand();
+        if ("result".equals(step)) beginTranslate(lastSource, lastTarget);
+    }
+
+    private void syncExpand() {
+        if (expandRow == null) return;
+        expandRow.setVisibility(sideMode ? View.VISIBLE : View.GONE);
+        if (!sideMode) return;
+        String slice = selected == null ? "" : selected;
+        int words = wordCount(slice);
+        if (words <= 1 && slice.length() > 12 && !slice.contains(" ")) {
+            amountView.setText(slice.length() + " characters");
+        } else {
+            amountView.setText(words + (words == 1 ? " word" : " words"));
+        }
+        boolean shrunk = rangeStart != anchorStart || rangeEnd != anchorEnd;
+        lessButton.setEnabled(!rangeHistory.isEmpty() || shrunk);
+        moreButton.setEnabled(canGrow());
+    }
+
+    private boolean canGrow() {
+        if (passage.isEmpty() || selected.length() >= MAX_CHARS) return false;
+        if (rangeEnd < passage.length() && stepForward(passage, rangeEnd) != rangeEnd) return true;
+        return rangeStart > 0 && stepBackward(passage, rangeStart) != rangeStart;
+    }
+
+    private String currentSlice() {
+        if (passage == null || passage.isEmpty()) return selected == null ? "" : selected;
+        int start = Math.max(0, Math.min(rangeStart, passage.length()));
+        int end = Math.max(start, Math.min(rangeEnd, passage.length()));
+        String slice = passage.substring(start, end).trim();
+        return slice.isEmpty() ? (selected == null ? "" : selected) : slice;
+    }
+
+    private void showPassage() {
+        if (sideMode) {
+            preview.setMaxLines(4);
+            preview.setEllipsize(null);
+            preview.setMovementMethod(new ScrollingMovementMethod());
+            preview.setText(selected);
+            preview.post(() -> {
+                if (preview.getLayout() == null) return;
+                if (!grewForward) {
+                    preview.scrollTo(0, 0);
+                    return;
+                }
+                int extra = preview.getLayout().getLineTop(preview.getLineCount()) - preview.getHeight();
+                preview.scrollTo(0, Math.max(0, extra));
+            });
+            return;
+        }
+        preview.setMaxLines(3);
+        preview.setEllipsize(TextUtils.TruncateAt.END);
+        preview.setMovementMethod(null);
+        preview.setText(previewOf(selected));
+    }
+
+    private static int wordCount(String text) {
+        int words = 0;
+        boolean inWord = false;
+        for (int i = 0; i < text.length(); ) {
+            int point = text.codePointAt(i);
+            if (Character.isWhitespace(point)) inWord = false;
+            else if (!inWord) {
+                words++;
+                inWord = true;
+            }
+            i += Character.charCount(point);
+        }
+        return words;
+    }
+
+    private static boolean isStop(char c) {
+        return c == '.' || c == '!' || c == '?' || c == '\n'
+                || c == '。' || c == '！' || c == '？';
+    }
+
+    private static int stepForward(String text, int index) {
+        int len = text.length();
+        int i = index;
+        while (i < len && Character.isWhitespace(text.charAt(i))) i++;
+        if (i >= len) return index;
+        int words = 0;
+        int guard = Math.min(len, i + 90);
+        while (i < guard) {
+            char c = text.charAt(i);
+            i++;
+            if (isStop(c)) return i;
+            if (Character.isWhitespace(c)) {
+                words++;
+                while (i < len && Character.isWhitespace(text.charAt(i))) i++;
+                if (words >= 8) return Math.min(i, len);
+            }
+        }
+        return i > index ? i : Math.min(len, index + 1);
+    }
+
+    private static int stepBackward(String text, int index) {
+        int i = index;
+        while (i > 0 && Character.isWhitespace(text.charAt(i - 1))) i--;
+        if (i <= 0) return 0;
+        if (i < index && isStop(text.charAt(i - 1))) {
+            i--;
+            while (i > 0 && Character.isWhitespace(text.charAt(i - 1))) i--;
+        }
+        if (i <= 0) return 0;
+        int guard = Math.max(0, i - 90);
+        int words = 0;
+        while (i > guard) {
+            char c = text.charAt(i - 1);
+            if (isStop(c)) return i;
+            i--;
+            if (Character.isWhitespace(c)) {
+                words++;
+                if (words >= 8) {
+                    while (i > 0 && Character.isWhitespace(text.charAt(i - 1))) i--;
+                    return i;
+                }
+            }
+        }
+        return i < index ? i : Math.max(0, index - 1);
     }
 
     private String previewOf(String text) {

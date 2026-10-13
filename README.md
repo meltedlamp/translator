@@ -1,6 +1,6 @@
 # Melted Talker
 
-A translator that stays on this computer and can be opened on a phone on the same Wi-Fi. It detects a language, or uses the one you pick, and turns the words into the language you chose. The words go to Google Translate. Nothing is saved.
+A translator that stays on this computer and can be opened on a phone on the same Wi-Fi. It detects a language, or uses the one you pick, and turns the words into the language you chose. The words go to Google Translate. A grammar brain stays in the folder you downloaded, or on the phone, and keeps learning from the text.
 
 The page that explains the Android app and offers the APK is [meltedlamp.github.io/translator](https://meltedlamp.github.io/translator/).
 
@@ -21,6 +21,8 @@ Run `start.bat`. Python has to be installed. The translator stays in the tray.
 
 The Android app is Melted Talker. Paste or type, tap Translate, or share text into the app from somewhere else. It can stay on in the background, including after the phone restarts. A passage should stay under 12,000 characters.
 
+In the app, turn on the side tab. A small tab stays on the edge of the screen. Long-press text in any app, tap the tab, and use More to include the next part of that passage before it translates. Long-press and choose Translate still works on the words you already selected.
+
 You can also open the computer’s page in the phone’s browser and add it to the home screen. Both devices need the same Wi-Fi, and the computer has to stay running.
 
 ## Changes
@@ -29,6 +31,8 @@ Newest first. Each new change goes at the top of this list.
 
 ### 13 October 2026
 
+- A grammar brain stays in the download folder on a computer, and in the app on a phone. It starts with factory grammar rules and keeps learning from mistakes in the text, and from edits to a translation.
+- On the phone, turn on the side tab and it stays on the edge of the screen. Long-press text in any app, tap the tab, and add more of that passage before it translates.
 - The translator page loads this computer’s phone address as soon as it opens, so the QR code and link are ready without an extra step.
 - The chosen From and Into languages are remembered and used when selected text is translated.
 - The translator stays running in the background on a dark page, and text can be turned into any language, not only English.

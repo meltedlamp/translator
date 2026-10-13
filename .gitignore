@@ -1,4 +1,6 @@
 __pycache__/
+brain.json
+brain.json.tmp
 *.py[cod]
 downloads/
 build/

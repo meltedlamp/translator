@@ -37,6 +37,7 @@
             android:excludeFromRecents="true"
             android:exported="true"
             android:label="@string/process_text_label"
+            android:taskAffinity=""
             android:theme="@style/TranslateDialog">
             <intent-filter android:label="@string/process_text_label">
                 <action android:name="android.intent.action.PROCESS_TEXT" />
@@ -44,6 +45,18 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".SideTranslateService"
+            android:exported="false"
+            android:label="@string/side_setting_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/side_translate" />
+        </service>
         <service
             android:name=".TalkerService"
             android:exported="false"

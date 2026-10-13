@@ -163,7 +163,15 @@ def polish(text):
     cleaned = apply_spoken_punctuation(cleaned)
     cleaned = tidy(cleaned)
     cleaned = capitalize(cleaned)
-    return finish(cleaned)
+    cleaned = finish(cleaned)
+    try:
+        import brain
+
+        if re.search(r"\b(?:the|you|your|dont|don't|i|is|are|was)\b", cleaned, re.I):
+            cleaned, _fixes = brain.study(cleaned)
+    except Exception:
+        return cleaned
+    return cleaned
 
 
 def too_quiet(audio, rate=RATE):

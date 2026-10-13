@@ -12,6 +12,8 @@ import urllib.request
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+import brain
+
 PORT = 8765
 HOST = "0.0.0.0"
 
@@ -212,9 +214,17 @@ def translate_chunk(text, source="auto", target="en"):
     }
 
 
-def translate_text(text, source="auto", target="en"):
-    source = source if source in LANGUAGE_NAMES or source == "auto" else "auto"
-    target = target if target in LANGUAGE_NAMES else "en"
+def _with_brain(result, fixes):
+    learned = brain.note_for(fixes)
+    if learned:
+        result["note"] = f"{result['note']} {learned}".strip()
+    result["brain"] = brain.snapshot(fixes)
+    if result.get("targetCode") == "en":
+        result["english"] = result["translation"]
+    return result
+
+
+def _translate_once(text, source, target):
     pieces = [translate_chunk(part, source, target) for part in split_text(text)]
     best = max(pieces, key=lambda piece: piece["weight"])
     code = best["code"]
@@ -228,7 +238,7 @@ def translate_text(text, source="auto", target="en"):
     elif source == "auto" and confidence is not None and confidence < 0.35:
         note = "Low confidence. A very short line can be hard to place."
     translation = "".join(piece["translation"] for piece in pieces).strip()
-    result = {
+    return {
         "translation": translation,
         "language": language_name(code),
         "code": code,
@@ -237,9 +247,31 @@ def translate_text(text, source="auto", target="en"):
         "confidence": confidence,
         "note": note,
     }
+
+
+def translate_text(text, source="auto", target="en"):
+    source = source if source in LANGUAGE_NAMES or source == "auto" else "auto"
+    target = target if target in LANGUAGE_NAMES else "en"
+    original = text
+    prepared = text
+    fixes = []
+    if source == "en":
+        prepared, fixes = brain.study(text, force=True)
+    result = _translate_once(prepared, source, target)
+    detected_english = same_language(result.get("code"), "en")
+    if source != "en" and detected_english:
+        studied, found = brain.study(original, force=True)
+        fixes.extend(found)
+        if studied != original and not same_language(result.get("code"), target):
+            try:
+                result = _translate_once(studied, "en", target)
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                pass
     if target == "en":
-        result["english"] = translation
-    return result
+        corrected, more = brain.study(result["translation"], force=True)
+        result["translation"] = corrected
+        fixes.extend(more)
+    return _with_brain(result, fixes)
 
 
 def translate_to_english(text):
@@ -357,6 +389,9 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/settings":
             self._json(200, language_settings())
             return
+        if path == "/api/brain":
+            self._json(200, brain.status())
+            return
         if path == "/phone-qr.png":
             url = phone_url()
             if not url:
@@ -379,6 +414,9 @@ class Handler(SimpleHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/api/dictate":
             self._dictate()
+            return
+        if path == "/api/brain":
+            self._teach_brain()
             return
         if path == "/api/settings":
             self._save_settings()
@@ -445,6 +483,23 @@ class Handler(SimpleHTTPRequestHandler):
             body = {}
         self._json(200, store_language_settings(body.get("source"), body.get("target")))
 
+    def _teach_brain(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length > 200_000:
+            self._json(413, {"error": "That text is too long."})
+            return
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._json(400, {"error": "Send the before and after text."})
+            return
+        if not isinstance(body, dict):
+            body = {}
+        lesson = brain.teach(body.get("before"), body.get("after"))
+        payload = brain.status()
+        payload["lesson"] = lesson
+        self._json(200, payload)
+
     def _dictate(self):
         length = int(self.headers.get("Content-Length", "0") or "0")
         if length <= 0:
@@ -484,6 +539,8 @@ class Handler(SimpleHTTPRequestHandler):
 def start_background():
     """Serve the translator page without opening a browser or blocking."""
 
+    brain.ensure()
+
     def run():
         try:
             httpd = TranslatorServer((HOST, PORT), Handler)
@@ -495,6 +552,7 @@ def start_background():
 
 
 def main():
+    brain.ensure()
     try:
         server = TranslatorServer((HOST, PORT), Handler)
     except OSError:

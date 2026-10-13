@@ -26,6 +26,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Brain.open(getFilesDir());
         Translator.loadNames(getAssets());
         webView = new WebView(this);
         setContentView(webView);
@@ -39,6 +40,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 pageReady = true;
                 deliverShare();
+                publishSide();
             }
         });
         webView.addJavascriptInterface(new NativeBridge(webView), "ToEnglishNative");
@@ -80,6 +82,18 @@ public class MainActivity extends Activity {
             startActivity(intent);
         } catch (Exception ignored) {
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        publishSide();
+    }
+
+    private void publishSide() {
+        if (!pageReady || webView == null) return;
+        boolean on = SideTranslateService.enabled(this);
+        webView.evaluateJavascript("window.onSideStatus&&window.onSideStatus(" + on + ")", null);
     }
 
     @Override
