@@ -362,6 +362,8 @@ copyPhone.addEventListener("click", async () => {
   }, 1200);
 });
 
+if (!window.ToEnglishNative) loadPhoneLink();
+
 let nativeSeq = 0;
 const nativeWaiters = new Map();
 
