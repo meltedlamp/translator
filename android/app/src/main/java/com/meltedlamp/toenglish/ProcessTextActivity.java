@@ -3,7 +3,9 @@ package com.meltedlamp.toenglish;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
@@ -41,6 +43,9 @@ public class ProcessTextActivity extends Activity {
     private final ExecutorService pool = Executors.newSingleThreadExecutor();
 
     private static final int MAX_CHARS = 12000;
+    static final String PREFS = "translator";
+    static final String KEY_SOURCE = "source";
+    static final String KEY_TARGET = "target";
 
     private FrameLayout stage;
     private TextView title;
@@ -104,7 +109,8 @@ public class ProcessTextActivity extends Activity {
             finish();
             return;
         }
-        showFrom();
+        loadLanguages();
+        beginTranslate(lastSource, lastTarget);
     }
 
     @Override
@@ -116,7 +122,8 @@ public class ProcessTextActivity extends Activity {
             finish();
             return;
         }
-        showFrom();
+        loadLanguages();
+        beginTranslate(lastSource, lastTarget);
     }
 
     @Override
@@ -129,12 +136,12 @@ public class ProcessTextActivity extends Activity {
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        if ("result".equals(step)) {
-            showInto();
-            return;
-        }
         if ("into".equals(step)) {
             showFrom();
+            return;
+        }
+        if ("from".equals(step)) {
+            beginTranslate(lastSource, lastTarget);
             return;
         }
         setResult(RESULT_CANCELED);
@@ -215,6 +222,8 @@ public class ProcessTextActivity extends Activity {
 
     private void showLanguageStep(String nextStep, String heading, boolean includeDetect, java.util.function.Consumer<String> onPick) {
         step = nextStep;
+        title.setOnClickListener(null);
+        title.setClickable(false);
         title.setText(heading);
         selected = currentSlice();
         showPassage();
@@ -245,8 +254,14 @@ public class ProcessTextActivity extends Activity {
         step = "result";
         lastSource = source;
         lastTarget = target;
+        saveLanguages();
+        selected = currentSlice();
+        showPassage();
+        syncExpand();
         final int gen = ++generation;
         final String text = selected;
+        title.setOnClickListener(null);
+        title.setClickable(false);
         title.setText("Translating…");
         status.setText("");
         setStageHeight(ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -287,7 +302,8 @@ public class ProcessTextActivity extends Activity {
         title.setText(language.equals(target) ? language : language + " → " + target);
         showPassage();
         syncExpand();
-        status.setText(data.optString("note", ""));
+        String note = data.optString("note", "");
+        status.setText(note.isEmpty() ? "Tap the languages above to change them." : note);
         TextView body = new TextView(this);
         body.setText(translation);
         body.setTextColor(0xFFF4EFE6);
@@ -306,6 +322,7 @@ public class ProcessTextActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         actionRow.topMargin = dp(16);
         actions.setLayoutParams(actionRow);
+        title.setOnClickListener(view -> showFrom());
         actions.addView(actionButton("Copy", false, () -> copyTranslation(translation)));
         if (!readOnly) {
             actions.addView(actionButton("Replace", true, () -> replaceSelection(translation)));
@@ -589,6 +606,45 @@ public class ProcessTextActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    static String savedSource(Context context) {
+        String value = prefs(context).getString(KEY_SOURCE, "auto");
+        if ("auto".equals(value) || Translator.knownLanguage(value)) return value;
+        return "auto";
+    }
+
+    static String savedTarget(Context context) {
+        String value = prefs(context).getString(KEY_TARGET, "en");
+        return Translator.knownLanguage(value) ? value : "en";
+    }
+
+    static boolean languagesChosen(Context context) {
+        SharedPreferences prefs = prefs(context);
+        return prefs.contains(KEY_SOURCE) || prefs.contains(KEY_TARGET);
+    }
+
+    static void storeLanguages(Context context, String source, String target) {
+        if (source == null || source.isEmpty() || (!"auto".equals(source) && !Translator.knownLanguage(source))) {
+            source = "auto";
+        }
+        if (target == null || target.isEmpty() || !Translator.knownLanguage(target)) {
+            target = "en";
+        }
+        prefs(context).edit().putString(KEY_SOURCE, source).putString(KEY_TARGET, target).apply();
+    }
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getSharedPreferences(PREFS, MODE_PRIVATE);
+    }
+
+    private void loadLanguages() {
+        lastSource = savedSource(this);
+        lastTarget = savedTarget(this);
+    }
+
+    private void saveLanguages() {
+        storeLanguages(this, lastSource, lastTarget);
     }
 
     private static final class LangRow {

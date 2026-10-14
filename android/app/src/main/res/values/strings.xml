@@ -3,7 +3,7 @@
     <string name="app_name">To English</string>
     <string name="process_text_label">Translate</string>
     <string name="side_setting_label">Side translate</string>
-    <string name="side_translate_desc">Shows a small tab on the edge of the screen. After you long-press text, that tab can read the selection and a little more of the same passage so you can translate it. It does not read the screen unless you do this, and it does not save the words.</string>
+    <string name="side_translate_desc">Shows a small tab on the edge of the screen. After you long-press text, tap that tab and the translation comes up right away. It does not read the screen unless you do this, and it does not save the words.</string>
     <string name="talker_channel">Melted Talker</string>
     <string name="talker_on">Melted Talker is on</string>
     <string name="talker_on_detail">Stays ready in the background.</string>

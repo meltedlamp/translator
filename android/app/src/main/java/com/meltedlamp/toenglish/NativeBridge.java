@@ -54,6 +54,24 @@ final class NativeBridge {
     }
 
     @JavascriptInterface
+    public void saveLanguages(String source, String target) {
+        ProcessTextActivity.storeLanguages(webView.getContext(), source, target);
+    }
+
+    @JavascriptInterface
+    public String languageSettings() {
+        Context context = webView.getContext();
+        JSONObject data = new JSONObject();
+        try {
+            data.put("source", ProcessTextActivity.savedSource(context));
+            data.put("target", ProcessTextActivity.savedTarget(context));
+            data.put("chosen", ProcessTextActivity.languagesChosen(context));
+        } catch (Exception ignored) {
+        }
+        return data.toString();
+    }
+
+    @JavascriptInterface
     public void openSideSetting() {
         Context context = webView.getContext();
         webView.post(() -> {

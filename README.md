@@ -21,13 +21,17 @@ Run `start.bat`. Python has to be installed. The translator stays in the tray.
 
 The Android app is Melted Talker. Paste or type, tap Translate, or share text into the app from somewhere else. It can stay on in the background, including after the phone restarts. A passage should stay under 12,000 characters.
 
-In the app, turn on the side tab. A small tab stays on the edge of the screen. Long-press text in any app, tap the tab, and use More to include the next part of that passage before it translates. Long-press and choose Translate still works on the words you already selected.
+In the app, turn on the side tab. A small tab stays on the edge of the screen. Long-press text in any app, tap Translate on the edge, and the translation comes up right away. Long-press and choose Translate still works the same way. Tap the languages on that card if you want a different pair.
 
 You can also open the computer’s page in the phone’s browser and add it to the home screen. Both devices need the same Wi-Fi, and the computer has to stay running.
 
 ## Changes
 
 Newest first. Each new change goes at the top of this list.
+
+### 15 October 2026
+
+- On a phone, long-press text and tap Translate. The translation comes up in that one tap, using the From and Into languages you already chose.
 
 ### 14 October 2026
 

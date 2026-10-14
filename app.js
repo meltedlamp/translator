@@ -720,7 +720,11 @@ function onLanguageChange() {
 }
 
 function saveSharedLanguages() {
-  if (!localDesk || window.ToEnglishNative) return;
+  if (window.ToEnglishNative && typeof window.ToEnglishNative.saveLanguages === "function") {
+    window.ToEnglishNative.saveLanguages(sourceCode(), targetCode());
+    return;
+  }
+  if (!localDesk) return;
   fetch("/api/settings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -734,6 +738,11 @@ async function loadSharedLanguages() {
   const savedSource = recall("translator-source");
   if (savedSource) chooseLanguage(fromLang, savedSource);
   if (savedTarget) chooseLanguage(intoLang, savedTarget);
+  const nativeLangs = readNativeBrain("languageSettings", []);
+  if (nativeLangs && nativeLangs.chosen) {
+    chooseLanguage(fromLang, nativeLangs.source);
+    chooseLanguage(intoLang, nativeLangs.target);
+  }
   if (localDesk && !window.ToEnglishNative) {
     try {
       const response = await fetch("/api/settings");
