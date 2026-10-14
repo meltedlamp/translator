@@ -4,7 +4,7 @@ A translator that stays on this computer and can be opened on a phone on the sam
 
 Anyone can use it in a browser at [meltedlamp.github.io/translator](https://meltedlamp.github.io/translator/), with no download. The Android app is on that same site, under [Android app](https://meltedlamp.github.io/translator/docs/).
 
-Download [To-English.apk](https://github.com/meltedlamp/translator/releases/latest/download/To-English.apk) (version 1.2). Open the file on an Android phone and allow the install. If the app is already on the phone, it updates in place.
+Download [To-English.apk](https://github.com/meltedlamp/translator/releases/latest/download/To-English.apk) (version 1.2). Open the file on an Android phone and allow the install. If the app is already on the phone, it updates in place. If the phone says App not installed, uninstall To English in Settings, Apps, then open the APK again.
 
 ## On this computer
 
@@ -31,6 +31,7 @@ Newest first. Each new change goes at the top of this list.
 
 ### 15 October 2026
 
+- If a phone says App not installed, the download page now explains how to fix it: uninstall To English, then open the APK again.
 - Download To-English.apk version 1.2 to get one-tap translation on the phone. Opening it updates the app you already have.
 - On a phone, long-press text and tap Translate. The translation comes up in that one tap, using the From and Into languages you already chose.
 
