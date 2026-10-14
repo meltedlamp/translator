@@ -354,6 +354,11 @@ button.hearing {
 
 .phone-only { display: none; }
 .installed-only { display: none; }
+.public-only { display: none; }
+
+.fine a {
+  color: var(--stamp);
+}
 
 .hold-menu {
   position: fixed;
@@ -538,6 +543,12 @@ button.hearing {
 
 body.on-phone .desk-only { display: none; }
 body.on-phone .phone-only { display: block; }
+
+body.public-web .desk-only,
+body.public-web .phone,
+body.public-web .phone-only,
+body.public-web .installed-only { display: none; }
+body.public-web .public-only { display: block; }
 
 body.installed .desk-only,
 body.installed .phone-only,

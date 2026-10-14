@@ -12,6 +12,12 @@ const swapBtn = document.querySelector("#swap");
 const brainEl = document.querySelector("#brain");
 
 const MAX = 12000;
+const GOOGLE = "https://translate.googleapis.com/translate_a/single";
+const CHUNK = 3500;
+const BRAIN_KEY = "translator-brain-lessons";
+const onThisPc = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+const localDesk = Boolean(window.ToEnglishNative) || onThisPc || location.port === "8765";
+const publicWeb = !localDesk;
 let timer = 0;
 let controller = null;
 let lastSent = null;
@@ -55,6 +61,140 @@ function emptyLine() {
   return `${targetName()} lands here.`;
 }
 
+function languageName(code) {
+  if (!code) return "Unknown";
+  const options = [...fromLang.options, ...intoLang.options];
+  const exact = options.find((option) => option.value === code);
+  if (exact && exact.value !== "auto") return exact.textContent;
+  const base = code.split("-")[0];
+  const match = options.find((option) => option.value === base);
+  return match && match.value !== "auto" ? match.textContent : code;
+}
+
+function sameLanguage(detected, target) {
+  if (!detected || !target) return false;
+  if (detected === target) return true;
+  return !target.includes("-") && detected.split("-")[0] === target;
+}
+
+function splitText(text, limit = CHUNK) {
+  if (text.length <= limit) return [text];
+  const parts = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + limit, text.length);
+    if (end < text.length) {
+      const breakAt = text.lastIndexOf("\n", end - 1);
+      if (breakAt > start + Math.floor(limit / 4)) end = breakAt + 1;
+    }
+    parts.push(text.slice(start, end));
+    start = end;
+  }
+  return parts;
+}
+
+async function translateChunk(text, sourceLang, target, signal) {
+  const body = new URLSearchParams({
+    client: "gtx",
+    sl: sourceLang || "auto",
+    tl: target || "en",
+    dt: "t",
+    dj: "1",
+    q: text,
+  });
+  const response = await fetch(GOOGLE, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error("Could not reach the translator. Check your connection and try again.");
+  }
+  const data = await response.json();
+  const translation = (data.sentences || [])
+    .map((sentence) => sentence.trans || "")
+    .join("");
+  return {
+    translation,
+    code: data.src || "",
+    confidence: typeof data.confidence === "number" ? data.confidence : null,
+    weight: text.length,
+  };
+}
+
+async function translateInBrowser(text, sourceLang, target, signal) {
+  const pieces = [];
+  for (const part of splitText(text)) {
+    pieces.push(await translateChunk(part, sourceLang, target, signal));
+  }
+  const best = pieces.reduce((left, right) => (right.weight > left.weight ? right : left));
+  const code = best.code;
+  const confidence = best.confidence;
+  const toName = targetName();
+  let note = "";
+  if (sameLanguage(code, target)) note = `This already looks like ${toName}.`;
+  else if (sourceLang === "en" && code && !sameLanguage(code, "en")) {
+    note = `That was read as ${languageName(code)}, not English.`;
+  } else if (sourceLang === "auto" && confidence != null && confidence < 0.35) {
+    note = "Low confidence. A very short line can be hard to place.";
+  }
+  return {
+    translation: pieces.map((piece) => piece.translation).join("").trim(),
+    language: languageName(code),
+    code,
+    target: toName,
+    targetCode: target,
+    confidence,
+    note,
+    brain: publicBrainStatus(),
+  };
+}
+
+function publicBrain() {
+  try {
+    const data = JSON.parse(localStorage.getItem(BRAIN_KEY) || "{}");
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function publicBrainStatus() {
+  return { lessons: Object.keys(publicBrain()).length };
+}
+
+function storePublicBrain(lessons) {
+  try {
+    localStorage.setItem(BRAIN_KEY, JSON.stringify(lessons));
+  } catch {
+    /* The page still translates if storage is blocked. */
+  }
+  return { lessons: Object.keys(lessons).length };
+}
+
+function publicTeach(before, after) {
+  if (!before || !after || before === after) return { ...publicBrainStatus(), lesson: null };
+  const limit = Math.min(before.length, after.length);
+  let prefix = 0;
+  while (prefix < limit && before[prefix] === after[prefix]) prefix += 1;
+  let suffix = 0;
+  while (suffix < limit - prefix && before.at(-1 - suffix) === after.at(-1 - suffix)) suffix += 1;
+  while (prefix > 0 && !" \t\n".includes(before[prefix - 1])) prefix -= 1;
+  while (suffix > 0 && !" \t\n".includes(before.at(-suffix))) suffix -= 1;
+  const wrong = before.slice(prefix, before.length - suffix).trim().replace(/\s+/g, " ");
+  const right = after.slice(prefix, after.length - suffix).trim().replace(/\s+/g, " ");
+  if (!wrong || !right || wrong.toLowerCase() === right.toLowerCase()) {
+    return { ...publicBrainStatus(), lesson: null };
+  }
+  if (wrong.length > 80 || right.length > 80) return { ...publicBrainStatus(), lesson: null };
+  const lessons = publicBrain();
+  lessons[wrong.toLowerCase()] = { right, from: "edit" };
+  const status = storePublicBrain(lessons);
+  status.lesson = { wrong, right };
+  return status;
+}
+
 function requestKey(text) {
   return `${sourceCode()}|${targetCode()}|${text}`;
 }
@@ -71,6 +211,7 @@ function setOutput(text, empty) {
 
 function brainPlace() {
   if (document.body.classList.contains("installed")) return "on this phone";
+  if (document.body.classList.contains("public-web")) return "in this browser";
   if (document.body.classList.contains("on-phone")) return "on the computer you downloaded";
   return "in this folder";
 }
@@ -98,6 +239,10 @@ async function loadBrain() {
     showBrain(native);
     return;
   }
+  if (publicWeb) {
+    showBrain(publicBrainStatus());
+    return;
+  }
   try {
     const response = await fetch("/api/brain");
     if (response.ok) showBrain(await response.json());
@@ -109,6 +254,7 @@ async function loadBrain() {
 async function teachBrain(before, after) {
   const native = readNativeBrain("teach", [before, after]);
   if (native) return native;
+  if (publicWeb) return publicTeach(before, after);
   const response = await fetch("/api/brain", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -223,6 +369,8 @@ async function translate(manual) {
     let data;
     if (window.ToEnglishNative) {
       data = await translateWithNative(text, from, into);
+    } else if (publicWeb) {
+      data = await translateInBrowser(text, from, into, request.signal);
     } else {
       const response = await fetch("/api/translate", {
         method: "POST",
@@ -343,7 +491,44 @@ function stopSpeaking() {
   if (recorder && recorder.state === "recording") recorder.stop();
 }
 
-if (speakBtn && !window.ToEnglishNative && window.isSecureContext && navigator.mediaDevices && window.MediaRecorder) {
+const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (speakBtn && publicWeb && Speech) {
+  let recognition = null;
+  speakBtn.addEventListener("click", () => {
+    if (recognition) {
+      recognition.stop();
+      return;
+    }
+    try {
+      recognition = new Speech();
+    } catch {
+      setStatus("Couldn't turn that speech into text.");
+      return;
+    }
+    recognition.lang = sourceCode() === "auto" ? navigator.language || "en-US" : sourceCode();
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const spoken = event.results[0]?.[0]?.transcript || "";
+      if (spoken) insertAtCursor(spoken);
+      setStatus("");
+    };
+    recognition.onerror = () => {
+      setStatus("Couldn't turn that speech into text.");
+    };
+    recognition.onend = () => {
+      recognition = null;
+      speakBtn.textContent = "Speak";
+      speakBtn.classList.remove("hearing");
+      speakBtn.setAttribute("aria-pressed", "false");
+    };
+    recognition.start();
+    speakBtn.textContent = "Stop";
+    speakBtn.classList.add("hearing");
+    speakBtn.setAttribute("aria-pressed", "true");
+    setStatus("Listening… tap Stop when you're done.");
+  });
+} else if (speakBtn && !window.ToEnglishNative && window.isSecureContext && navigator.mediaDevices && window.MediaRecorder) {
   speakBtn.addEventListener("click", async () => {
     if (recorder && recorder.state === "recording") {
       stopSpeaking();
@@ -399,7 +584,6 @@ if (speakBtn && !window.ToEnglishNative && window.isSecureContext && navigator.m
   speakBtn.hidden = true;
 }
 
-const onThisPc = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
 const sideToggle = document.querySelector("#side-toggle");
 
 function paintSide(on) {
@@ -418,6 +602,8 @@ if (sideToggle && window.ToEnglishNative) {
 if (window.ToEnglishNative) {
   document.body.classList.add("installed");
   document.querySelector(".voice")?.remove();
+} else if (publicWeb) {
+  document.body.classList.add("public-web");
 } else if (!onThisPc) {
   document.body.classList.add("on-phone");
   source.blur();
@@ -534,6 +720,7 @@ function onLanguageChange() {
 }
 
 function saveSharedLanguages() {
+  if (!localDesk || window.ToEnglishNative) return;
   fetch("/api/settings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -543,24 +730,23 @@ function saveSharedLanguages() {
 
 async function loadSharedLanguages() {
   fillFromLanguages();
-  const savedMode = recall("translator-mode");
   const savedTarget = recall("translator-target");
   const savedSource = recall("translator-source");
   if (savedSource) chooseLanguage(fromLang, savedSource);
-  if ((savedMode === "from-english" || savedMode === "any") && savedTarget) {
-    chooseLanguage(intoLang, savedTarget);
-  }
-  try {
-    const response = await fetch("/api/settings");
-    if (response.ok) {
-      const data = await response.json();
-      if (data.chosen) {
-        chooseLanguage(fromLang, data.source);
-        chooseLanguage(intoLang, data.target);
+  if (savedTarget) chooseLanguage(intoLang, savedTarget);
+  if (localDesk && !window.ToEnglishNative) {
+    try {
+      const response = await fetch("/api/settings");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.chosen) {
+          chooseLanguage(fromLang, data.source);
+          chooseLanguage(intoLang, data.target);
+        }
       }
+    } catch {
+      /* The languages chosen on this device still apply. */
     }
-  } catch {
-    /* The languages chosen on this device still apply. */
   }
   showSamples();
   if (!source.value.trim()) setOutput(emptyLine(), true);

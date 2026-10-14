@@ -2,7 +2,7 @@
 
 A translator that stays on this computer and can be opened on a phone on the same Wi-Fi. It detects a language, or uses the one you pick, and turns the words into the language you chose. The words go to Google Translate. A grammar brain stays in the folder you downloaded, or on the phone, and keeps learning from the text.
 
-The page that explains the Android app and offers the APK is [meltedlamp.github.io/translator](https://meltedlamp.github.io/translator/).
+Anyone can use it in a browser at [meltedlamp.github.io/translator](https://meltedlamp.github.io/translator/), with no download. The Android app is on that same site, under [Android app](https://meltedlamp.github.io/translator/docs/).
 
 Download [To-English.apk](https://github.com/meltedlamp/translator/releases/download/v1.0.0/To-English.apk) (version 1.0). Open the file on an Android phone and allow the install.
 
@@ -10,7 +10,7 @@ Download [To-English.apk](https://github.com/meltedlamp/translator/releases/down
 
 Run `start.bat`. Python has to be installed. The translator stays in the tray.
 
-- Select text in Discord or any other app and press `Ctrl+Alt+E`. A card stays on top of that app with the translation. Paste puts it back where you were typing.
+- Select text in Discord or any other app and press `Ctrl+E`. A card stays on top of that app with the translation. Paste puts it back where you were typing.
 - Copy text and the same card can appear on top.
 - Hold the right `Ctrl` key, speak, and release. The words are cleaned up and typed into the box that already has the cursor. Press `Ctrl+Alt+Space` to keep talking without holding the key.
 - The tray icon can pause translation, turn voice typing off, or stop launching with Windows.
@@ -28,6 +28,11 @@ You can also open the computer’s page in the phone’s browser and add it to t
 ## Changes
 
 Newest first. Each new change goes at the top of this list.
+
+### 14 October 2026
+
+- Anyone can use Melted Talker in a browser at meltedlamp.github.io/translator, with no download.
+- Select text in any app and press Ctrl+E to translate it. The card still stays on top, and paste still puts the translation back.
 
 ### 13 October 2026
 

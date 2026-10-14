@@ -1,7 +1,7 @@
 """Keep the translator running in the tray.
 
 Copy text in Discord or any other app and a card stays on top with the
-translation. Select text and press Ctrl+Alt+E to translate that
+translation. Select text and press Ctrl+E to translate that
 selection. Paste puts the translation back into the app you were using.
 
 Hold the right Ctrl key, speak, and release. The words are cleaned up
@@ -294,7 +294,7 @@ class WNDCLASSEXW(ctypes.Structure):
 
 
 HOTKEY_CHOICES = (
-    (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x45, "Ctrl+Alt+E"),
+    (MOD_CONTROL | MOD_NOREPEAT, 0x45, "Ctrl+E"),
     (MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, 0x45, "Ctrl+Shift+E"),
     (MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 0x54, "Ctrl+Alt+T"),
 )
@@ -660,7 +660,7 @@ class TranslatorApp:
         self.own_until = 0
         self.capturing = False
         self.debounce = None
-        self.hotkey_label = "Ctrl+Alt+E"
+        self.hotkey_label = "Ctrl+E"
         self.icon = None
         self.voice_lock = threading.Lock()
         self.stop_event = threading.Event()
