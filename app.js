@@ -42,6 +42,7 @@ function fillFromLanguages() {
   intoLang.querySelectorAll("optgroup").forEach((group) => {
     fromLang.appendChild(group.cloneNode(true));
   });
+  fromLang.value = "auto";
 }
 
 function sourceCode() {

@@ -29,6 +29,10 @@ You can also open the computer’s page in the phone’s browser and add it to t
 
 Newest first. Each new change goes at the top of this list.
 
+### 20 October 2026
+
+- Paste text in any language on a first visit and it is detected and translated right away. The From box used to start on English, so the text came back unchanged.
+
 ### 15 October 2026
 
 - If a phone says App not installed, the download page now explains how to fix it: uninstall To English, then open the APK again.
